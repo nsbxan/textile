@@ -169,17 +169,45 @@ export function App() {
   useEffect(() => {
     loadData();
 
-    // Bulutli bazadan yangi ma'lumotlarni fonda yuklash
+    // 1. Dastur ochilganda bulutli bazadan yangilash
     AppDatabase.syncFromCloud().then((changed) => {
       if (changed) {
         loadData();
       }
     });
 
+    // 2. Har 8 soniyada boshqa qurilmalardagi yangi savdo/tovarlarni tekshirish (Real-time Auto-Sync)
+    const syncInterval = setInterval(() => {
+      AppDatabase.syncFromCloud().then((changed) => {
+        if (changed) {
+          loadData();
+        }
+      });
+    }, 8000);
+
+    // 3. Foydalanuvchi ilovaga qaytganida (tab ochilganda yoki telefon qulfdan chiqqanda) darhol sinxronlash
+    const handleFocusSync = () => {
+      AppDatabase.syncFromCloud().then((changed) => {
+        if (changed) {
+          loadData();
+        }
+      });
+    };
+    window.addEventListener('focus', handleFocusSync);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        handleFocusSync();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
     const handleDataChange = () => loadData();
     window.addEventListener('erp_data_changed', handleDataChange);
     window.addEventListener('erp_rate_changed', handleDataChange);
     return () => {
+      clearInterval(syncInterval);
+      window.removeEventListener('focus', handleFocusSync);
+      document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('erp_data_changed', handleDataChange);
       window.removeEventListener('erp_rate_changed', handleDataChange);
     };

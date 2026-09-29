@@ -122,7 +122,7 @@ export class AppDatabase {
     });
   }
 
-  // Bulutli bazadan barcha ma'lumotlarni tortib olish (Cloud Sync)
+  // Bulutli bazadan barcha ma'lumotlarni tortib olish va 2 tomonlama sinxronizatsiya (Cloud Sync)
   static async syncFromCloud(): Promise<boolean> {
     if (!cloudDb.isConfigured()) return false;
     try {
@@ -130,30 +130,112 @@ export class AppDatabase {
       if (!data) return false;
 
       let changed = false;
+
+      // 1. PRODUCTS
+      const localProducts = this.load<Product[]>('products', []);
       if (data.products && data.products.length > 0) {
-        this.save('products', data.products);
+        // Bulutda mahsulotlar bor - mahalliy bazada bo'lmagan yangilari bo'lsa bulutga qo'shamiz
+        const cloudIds = new Set(data.products.map(p => p.id));
+        const missingInCloud = localProducts.filter(p => !cloudIds.has(p.id));
+        for (const p of missingInCloud) {
+          await cloudDb.upsertProduct(p);
+        }
+        const mergedProducts = [...data.products, ...missingInCloud];
+        this.save('products', mergedProducts);
         changed = true;
+      } else if (localProducts.length > 0) {
+        // Bulut bo'sh, ammo bu qurilmada mahsulotlar bor -> avtomatik bulutga yuklash!
+        for (const p of localProducts) {
+          await cloudDb.upsertProduct(p);
+        }
       }
+
+      // 2. SALES
+      const localSales = this.load<Sale[]>('sales', []);
       if (data.sales && data.sales.length > 0) {
-        this.save('sales', data.sales);
+        const cloudSaleIds = new Set(data.sales.map(s => s.id));
+        const missingSalesInCloud = localSales.filter(s => !cloudSaleIds.has(s.id));
+        for (const s of missingSalesInCloud) {
+          await cloudDb.upsertSale(s);
+        }
+        const mergedSales = [...data.sales, ...missingSalesInCloud];
+        this.save('sales', mergedSales);
         changed = true;
+      } else if (localSales.length > 0) {
+        for (const s of localSales) {
+          await cloudDb.upsertSale(s);
+        }
       }
+
+      // 3. CUSTOMERS
+      const localCustomers = this.load<Customer[]>('customers', []);
       if (data.customers && data.customers.length > 0) {
-        this.save('customers', data.customers);
+        const cloudCustIds = new Set(data.customers.map(c => c.id));
+        const missingCusts = localCustomers.filter(c => !cloudCustIds.has(c.id));
+        for (const c of missingCusts) {
+          await cloudDb.upsertCustomer(c);
+        }
+        const mergedCusts = [...data.customers, ...missingCusts];
+        this.save('customers', mergedCusts);
         changed = true;
+      } else if (localCustomers.length > 0) {
+        for (const c of localCustomers) {
+          await cloudDb.upsertCustomer(c);
+        }
       }
+
+      // 4. SUPPLIERS
+      const localSuppliers = this.load<Supplier[]>('suppliers', []);
       if (data.suppliers && data.suppliers.length > 0) {
-        this.save('suppliers', data.suppliers);
+        const cloudSupIds = new Set(data.suppliers.map(s => s.id));
+        const missingSups = localSuppliers.filter(s => !cloudSupIds.has(s.id));
+        for (const s of missingSups) {
+          await cloudDb.upsertSupplier(s);
+        }
+        const mergedSups = [...data.suppliers, ...missingSups];
+        this.save('suppliers', mergedSups);
         changed = true;
+      } else if (localSuppliers.length > 0) {
+        for (const s of localSuppliers) {
+          await cloudDb.upsertSupplier(s);
+        }
       }
+
+      // 5. EXPENSES
+      const localExpenses = this.load<Expense[]>('expenses', []);
       if (data.expenses && data.expenses.length > 0) {
-        this.save('expenses', data.expenses);
+        const cloudExpIds = new Set(data.expenses.map(e => e.id));
+        const missingExps = localExpenses.filter(e => !cloudExpIds.has(e.id));
+        for (const e of missingExps) {
+          await cloudDb.upsertExpense(e);
+        }
+        const mergedExps = [...data.expenses, ...missingExps];
+        this.save('expenses', mergedExps);
         changed = true;
+      } else if (localExpenses.length > 0) {
+        for (const e of localExpenses) {
+          await cloudDb.upsertExpense(e);
+        }
       }
+
+      // 6. DEBT TRANSACTIONS
+      const localDebts = this.load<DebtTransaction[]>('debt_transactions', []);
       if (data.debtTransactions && data.debtTransactions.length > 0) {
-        this.save('debt_transactions', data.debtTransactions);
+        const cloudDebtIds = new Set(data.debtTransactions.map(d => d.id));
+        const missingDebts = localDebts.filter(d => !cloudDebtIds.has(d.id));
+        for (const d of missingDebts) {
+          await cloudDb.upsertDebtTransaction(d);
+        }
+        const mergedDebts = [...data.debtTransactions, ...missingDebts];
+        this.save('debt_transactions', mergedDebts);
         changed = true;
+      } else if (localDebts.length > 0) {
+        for (const d of localDebts) {
+          await cloudDb.upsertDebtTransaction(d);
+        }
       }
+
+      // 7. SETTINGS
       if (data.settings) {
         this.save('settings', data.settings);
         changed = true;
