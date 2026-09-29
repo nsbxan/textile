@@ -5,8 +5,8 @@ const SUPABASE_STORAGE_KEY = 'savdo_erp_supabase_config';
 
 export const DEFAULT_SUPABASE_CONFIG: SupabaseConfig = {
   enabled: true,
-  url: (import.meta as any).env?.VITE_SUPABASE_URL || '',
-  anonKey: (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '',
+  url: (import.meta as any).env?.VITE_SUPABASE_URL || 'https://hxwhjzvbvnrufqinsloh.supabase.co',
+  anonKey: (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_BkN9NFXktPz8kq3_j3wmOA_4DHIJuwe',
 };
 
 export const SUPABASE_SQL_SETUP = `-- ==============================================================
@@ -102,10 +102,12 @@ class CloudDatabaseService {
       const saved = localStorage.getItem(SUPABASE_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
+        const url = (parsed.url && parsed.url.trim().length > 5) ? parsed.url.trim() : DEFAULT_SUPABASE_CONFIG.url;
+        const anonKey = (parsed.anonKey && parsed.anonKey.trim().length > 10) ? parsed.anonKey.trim() : DEFAULT_SUPABASE_CONFIG.anonKey;
         return {
           enabled: parsed.enabled ?? true,
-          url: parsed.url || DEFAULT_SUPABASE_CONFIG.url,
-          anonKey: parsed.anonKey || DEFAULT_SUPABASE_CONFIG.anonKey,
+          url,
+          anonKey,
         };
       }
     } catch {}
