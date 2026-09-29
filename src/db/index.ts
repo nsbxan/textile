@@ -51,19 +51,6 @@ const INITIAL_SUPPLIERS: Supplier[] = [];
 const INITIAL_EXPENSES: Expense[] = [];
 const INITIAL_SALES: Sale[] = [];
 
-// Avtomatik ravishda mavjud demo ma'lumotlarni tozalash
-const CLEAN_DB_FLAG = 'savdo_erp_clean_db_v5';
-if (typeof window !== 'undefined' && !localStorage.getItem(CLEAN_DB_FLAG)) {
-  localStorage.setItem(STORAGE_PREFIX + 'products', JSON.stringify([]));
-  localStorage.setItem(STORAGE_PREFIX + 'customers', JSON.stringify([]));
-  localStorage.setItem(STORAGE_PREFIX + 'suppliers', JSON.stringify([]));
-  localStorage.setItem(STORAGE_PREFIX + 'sales', JSON.stringify([]));
-  localStorage.setItem(STORAGE_PREFIX + 'expenses', JSON.stringify([]));
-  localStorage.setItem(STORAGE_PREFIX + 'supply_orders', JSON.stringify([]));
-  localStorage.setItem(STORAGE_PREFIX + 'debt_transactions', JSON.stringify([]));
-  localStorage.setItem(STORAGE_PREFIX + 'sync_events', JSON.stringify([]));
-  localStorage.setItem(CLEAN_DB_FLAG, 'true');
-}
 
 // IndexedDB / LocalStorage ma'lumotlar boshqaruvi
 export class AppDatabase {
