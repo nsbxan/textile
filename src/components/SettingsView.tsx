@@ -19,12 +19,16 @@ import {
   Bell,
   CheckCircle2,
   AlertCircle,
-  Globe
+  Globe,
+  Database,
+  Cloud,
+  Copy
 } from 'lucide-react';
-import { StoreSettings, AiConfig, TelegramConfig } from '../types';
+import { StoreSettings, AiConfig, TelegramConfig, SupabaseConfig } from '../types';
 import { AppDatabase, DEFAULT_STORES } from '../db';
 import { aiAgentService, DEFAULT_AI_CONFIG } from '../services/aiAgentService';
 import { telegramService } from '../services/telegramService';
+import { cloudDb, SUPABASE_SQL_SETUP } from '../services/supabase';
 import { AppLanguage } from '../utils/i18n';
 import { soundManager } from '../utils/sound';
 
@@ -64,21 +68,85 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [telegramTesting, setTelegramTesting] = useState(false);
   const [telegramTestResult, setTelegramTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  // Supabase Cloud DB Config state
+  const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>(
+    settings.supabaseConfig || cloudDb.getConfig()
+  );
+  const [supabaseTesting, setSupabaseTesting] = useState(false);
+  const [supabaseTestResult, setSupabaseTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [pushingCloud, setPushingCloud] = useState(false);
+  const [pushResult, setPushResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showSql, setShowSql] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     aiAgentService.saveConfig(aiConfig);
     telegramService.saveConfig(telegramConfig);
+    cloudDb.saveConfig(supabaseConfig);
     const updatedSettings: StoreSettings = {
       ...formData,
       currentStoreId: 'store_1',
       stores: DEFAULT_STORES,
       aiConfig,
       telegramConfig,
+      supabaseConfig,
     };
     AppDatabase.saveSettings(updatedSettings);
     onUpdateSettings(updatedSettings);
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2000);
+  };
+
+  const handleTestSupabase = async () => {
+    if (!supabaseConfig.url.trim() || !supabaseConfig.anonKey.trim()) {
+      alert("Iltimos, Supabase Project URL va Anon API kalitini kiriting!");
+      return;
+    }
+    setSupabaseTesting(true);
+    setSupabaseTestResult(null);
+    try {
+      const res = await cloudDb.testConnection(supabaseConfig.url, supabaseConfig.anonKey);
+      setSupabaseTestResult(res);
+      if (res.success) {
+        cloudDb.saveConfig(supabaseConfig);
+      }
+    } finally {
+      setSupabaseTesting(false);
+    }
+  };
+
+  const handlePushAllToCloud = async () => {
+    if (!cloudDb.isConfigured()) {
+      alert("Avval Supabase URL va API kalitni saqlang va ulanishni tekshiring!");
+      return;
+    }
+    if (!window.confirm("Kompyuteringizdagi barcha tovarlar, savdolar va mijozlar bulutli bazaga yuklanadi. Davom etasizmi?")) {
+      return;
+    }
+    setPushingCloud(true);
+    setPushResult(null);
+    try {
+      const res = await cloudDb.pushAllLocalData({
+        products: AppDatabase.getProducts('all'),
+        sales: AppDatabase.getSales('all'),
+        customers: AppDatabase.getCustomers('all'),
+        suppliers: AppDatabase.getSuppliers(),
+        expenses: AppDatabase.getExpenses('all'),
+        debtTransactions: AppDatabase.getDebtTransactions(),
+        settings: AppDatabase.getSettings(),
+      });
+      setPushResult(res);
+    } finally {
+      setPushingCloud(false);
+    }
+  };
+
+  const handleCopySql = () => {
+    navigator.clipboard.writeText(SUPABASE_SQL_SETUP);
+    setCopiedSql(true);
+    soundManager.playSuccessSound();
+    setTimeout(() => setCopiedSql(false), 2500);
   };
 
   const handleTestAi = async () => {
@@ -617,6 +685,159 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 }`}>
                   {telegramTestResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
                   <span>{telegramTestResult.message}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* BULUTLI BAZA (SUPABASE CLOUD DATABASE - FAQAT ADMIN) */}
+          <div className="p-5 rounded-2xl glass-card border border-emerald-500/30 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-500/20 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-600 border border-emerald-500 flex items-center justify-center text-white">
+                  <Database className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>Bulutli Baza (Supabase Cloud Database)</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                      Doimiy Saqlash
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Barcha matolar, savdolar va mijozlar bulutda saqlanadi. Saytdan chiqsangiz ham, boshqa telefondan kirsangiz ham bir xil turadi.
+                  </p>
+                </div>
+              </div>
+
+              <div className={`px-2.5 py-1 rounded-full text-[11px] font-bold border shrink-0 ${
+                supabaseConfig.url && supabaseConfig.anonKey
+                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400' 
+                  : 'bg-amber-500/15 border-amber-500/30 text-amber-600 dark:text-amber-400'
+              }`}>
+                {supabaseConfig.url && supabaseConfig.anonKey ? '✓ Sozlangan' : 'Ulanmagan'}
+              </div>
+            </div>
+
+            <div className="space-y-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Supabase URL */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Cloud className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>Supabase Project URL</span>
+                    </label>
+                    <a
+                      href="https://supabase.com/dashboard"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
+                    >
+                      <span>supabase.com</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <input
+                    type="text"
+                    value={supabaseConfig.url}
+                    onChange={(e) => setSupabaseConfig({ ...supabaseConfig, url: e.target.value.trim() })}
+                    placeholder="https://xyzproject.supabase.co"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-xs sm:text-sm focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                {/* Anon API Key */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>Supabase Anon (Public) Key</span>
+                    </label>
+                    <span className="text-[10px] text-slate-500">Project API Keys</span>
+                  </div>
+                  <input
+                    type="password"
+                    value={supabaseConfig.anonKey}
+                    onChange={(e) => setSupabaseConfig({ ...supabaseConfig, anonKey: e.target.value.trim() })}
+                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-xs sm:text-sm focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons: Test Connection & Migration */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={handleTestSupabase}
+                  disabled={supabaseTesting || !supabaseConfig.url || !supabaseConfig.anonKey}
+                  className="py-2.5 px-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center justify-center gap-1.5 transition-all interactive-press disabled:opacity-50"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  <span>{supabaseTesting ? "Tekshirilmoqda..." : "Ulanishni Sinash"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePushAllToCloud}
+                  disabled={pushingCloud || !cloudDb.isConfigured()}
+                  className="py-2.5 px-3 rounded-xl border border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center gap-1.5 transition-all interactive-press disabled:opacity-50"
+                >
+                  <Cloud className="w-3.5 h-3.5" />
+                  <span>{pushingCloud ? "Yuklanmoqda..." : "Barcha Ma'lumotlarni Bulutga Yuklash"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowSql(prev => !prev)}
+                  className="py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all interactive-press"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{showSql ? "SQL Kodni Yashirish" : "Supabase SQL Jadval Kori"}</span>
+                </button>
+              </div>
+
+              {supabaseTestResult && (
+                <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                  supabaseTestResult.success
+                    ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300'
+                }`}>
+                  {supabaseTestResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                  <span>{supabaseTestResult.message}</span>
+                </div>
+              )}
+
+              {pushResult && (
+                <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                  pushResult.success
+                    ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300'
+                }`}>
+                  {pushResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                  <span>{pushResult.message}</span>
+                </div>
+              )}
+
+              {showSql && (
+                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5 animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-300">
+                      Supabase SQL skripti (Supabase dashboard ➡️ SQL Editor'ga qo'yib 'Run' bosing):
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopySql}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1.5 transition-all interactive-press"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>{copiedSql ? "Nusxalandi!" : "Nusxalash (Copy)"}</span>
+                    </button>
+                  </div>
+                  <pre className="p-3 bg-slate-900 rounded-lg text-[10px] font-mono text-emerald-400 overflow-x-auto max-h-48 border border-slate-800">
+                    {SUPABASE_SQL_SETUP}
+                  </pre>
                 </div>
               )}
             </div>

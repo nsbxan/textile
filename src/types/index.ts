@@ -202,6 +202,12 @@ export interface TelegramConfig {
   notifyOnDebtPayment: boolean;
 }
 
+export interface SupabaseConfig {
+  enabled: boolean;
+  url: string;
+  anonKey: string;
+}
+
 export interface StoreSettings {
   storeName: string;
   address: string;
@@ -218,6 +224,7 @@ export interface StoreSettings {
   serverSync?: ServerSyncConfig;
   aiConfig?: AiConfig;
   telegramConfig?: TelegramConfig;
+  supabaseConfig?: SupabaseConfig;
 }
 
 export type UserRole = 'superadmin' | 'admin' | 'cashier';

@@ -169,6 +169,13 @@ export function App() {
   useEffect(() => {
     loadData();
 
+    // Bulutli bazadan yangi ma'lumotlarni fonda yuklash
+    AppDatabase.syncFromCloud().then((changed) => {
+      if (changed) {
+        loadData();
+      }
+    });
+
     const handleDataChange = () => loadData();
     window.addEventListener('erp_data_changed', handleDataChange);
     window.addEventListener('erp_rate_changed', handleDataChange);

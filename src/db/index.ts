@@ -3,6 +3,7 @@ import { generateId, generateReceiptNumber } from '../utils/formatters';
 import { serverSyncService, DEFAULT_SERVER_SYNC_CONFIG } from '../services/serverSync';
 import { telegramService } from '../services/telegramService';
 import { ParsedFabricItem } from '../utils/fabricDocumentParser';
+import { cloudDb, DEFAULT_SUPABASE_CONFIG } from '../services/supabase';
 
 const STORAGE_PREFIX = 'savdo_erp_';
 
@@ -42,6 +43,7 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   stores: DEFAULT_STORES,
   serverSync: DEFAULT_SERVER_SYNC_CONFIG,
   aiConfig: DEFAULT_AI_CONFIG_DB,
+  supabaseConfig: DEFAULT_SUPABASE_CONFIG,
 };
 
 // Boshlang'ich bo'sh ma'lumotlar (Demo ma'lumotlar olib tashlangan)
@@ -99,12 +101,17 @@ export class AppDatabase {
        stores: DEFAULT_STORES,
        serverSync: s.serverSync ? { ...DEFAULT_SERVER_SYNC_CONFIG, ...s.serverSync } : DEFAULT_SERVER_SYNC_CONFIG,
        aiConfig: s.aiConfig?.apiKey ? s.aiConfig : DEFAULT_AI_CONFIG_DB,
+       supabaseConfig: s.supabaseConfig ? { ...DEFAULT_SUPABASE_CONFIG, ...s.supabaseConfig } : DEFAULT_SUPABASE_CONFIG,
      };
      return updated;
    }
 
   static saveSettings(settings: StoreSettings): void {
     this.save('settings', settings);
+    if (settings.supabaseConfig) {
+      cloudDb.saveConfig(settings.supabaseConfig);
+    }
+    cloudDb.upsertSettings(settings);
     serverSyncService.recordEvent({
       action: 'SETTINGS_SAVED',
       entity: 'setting',
@@ -113,6 +120,53 @@ export class AppDatabase {
       description: "Tizim sozlamalari yangilandi",
       payload: settings,
     });
+  }
+
+  // Bulutli bazadan barcha ma'lumotlarni tortib olish (Cloud Sync)
+  static async syncFromCloud(): Promise<boolean> {
+    if (!cloudDb.isConfigured()) return false;
+    try {
+      const data = await cloudDb.pullAllData();
+      if (!data) return false;
+
+      let changed = false;
+      if (data.products && data.products.length > 0) {
+        this.save('products', data.products);
+        changed = true;
+      }
+      if (data.sales && data.sales.length > 0) {
+        this.save('sales', data.sales);
+        changed = true;
+      }
+      if (data.customers && data.customers.length > 0) {
+        this.save('customers', data.customers);
+        changed = true;
+      }
+      if (data.suppliers && data.suppliers.length > 0) {
+        this.save('suppliers', data.suppliers);
+        changed = true;
+      }
+      if (data.expenses && data.expenses.length > 0) {
+        this.save('expenses', data.expenses);
+        changed = true;
+      }
+      if (data.debtTransactions && data.debtTransactions.length > 0) {
+        this.save('debt_transactions', data.debtTransactions);
+        changed = true;
+      }
+      if (data.settings) {
+        this.save('settings', data.settings);
+        changed = true;
+      }
+
+      if (changed) {
+        window.dispatchEvent(new Event('erp_data_changed'));
+      }
+      return changed;
+    } catch (e) {
+      console.error('Error syncing from cloud:', e);
+      return false;
+    }
   }
 
   // --- PRODUCTS (Ombor & Trikotaj Matolar) ---
@@ -156,6 +210,7 @@ export class AppDatabase {
         };
         products[index] = updated;
         this.save('products', products);
+        cloudDb.upsertProduct(updated);
 
         serverSyncService.recordEvent({
           action: 'PRODUCT_SAVED',
@@ -193,6 +248,7 @@ export class AppDatabase {
 
     products.unshift(newProduct);
     this.save('products', products);
+    cloudDb.upsertProduct(newProduct);
 
     serverSyncService.recordEvent({
       action: 'PRODUCT_SAVED',
@@ -296,6 +352,7 @@ export class AppDatabase {
     }
 
     this.save('products', products);
+    for (const np of newProducts) cloudDb.upsertProduct(np);
 
     // Agar ta'minotchi tanlangan va supply order so'ralgan bo'lsa
     if (options?.createSupplyOrder && options.supplierId && supplyItems.length > 0) {
@@ -334,6 +391,7 @@ export class AppDatabase {
     const filtered = products.filter(p => p.id !== id);
     if (filtered.length !== products.length) {
       this.save('products', filtered);
+      cloudDb.deleteProduct(id);
       serverSyncService.recordEvent({
         action: 'PRODUCT_DELETED',
         entity: 'product',
@@ -355,6 +413,7 @@ export class AppDatabase {
       item.stock = Math.max(0, item.stock + delta);
       item.updatedAt = new Date().toISOString();
       this.save('products', products);
+      cloudDb.upsertProduct(item);
 
       serverSyncService.recordEvent({
         action: 'STOCK_UPDATED',
@@ -493,6 +552,7 @@ export class AppDatabase {
 
     sales.unshift(sale);
     this.save('sales', sales);
+    cloudDb.upsertSale(sale);
 
     serverSyncService.recordEvent({
       action: 'SALE_CREATED',
@@ -537,6 +597,7 @@ export class AppDatabase {
 
     const filtered = sales.filter(s => s.id !== saleId);
     this.save('sales', filtered);
+    cloudDb.deleteSale(saleId);
 
     serverSyncService.recordEvent({
       action: 'SALE_CREATED',
@@ -581,6 +642,7 @@ export class AppDatabase {
         };
         customers[index] = updated;
         this.save('customers', customers);
+        cloudDb.upsertCustomer(updated);
 
         serverSyncService.recordEvent({
           action: 'CUSTOMER_SAVED',
@@ -609,6 +671,7 @@ export class AppDatabase {
 
     customers.unshift(newCustomer);
     this.save('customers', customers);
+    cloudDb.upsertCustomer(newCustomer);
 
     serverSyncService.recordEvent({
       action: 'CUSTOMER_SAVED',
@@ -629,6 +692,7 @@ export class AppDatabase {
     const filtered = customers.filter(c => c.id !== id);
     if (filtered.length !== customers.length) {
       this.save('customers', filtered);
+      cloudDb.deleteCustomer(id);
 
       serverSyncService.recordEvent({
         action: 'CUSTOMER_DELETED',
@@ -703,6 +767,7 @@ export class AppDatabase {
         };
         suppliers[index] = updated;
         this.save('suppliers', suppliers);
+        cloudDb.upsertSupplier(updated);
 
         serverSyncService.recordEvent({
           action: 'SUPPLIER_SAVED',
@@ -730,6 +795,7 @@ export class AppDatabase {
 
     suppliers.unshift(newSupplier);
     this.save('suppliers', suppliers);
+    cloudDb.upsertSupplier(newSupplier);
 
     serverSyncService.recordEvent({
       action: 'SUPPLIER_SAVED',
@@ -750,6 +816,7 @@ export class AppDatabase {
     const filtered = suppliers.filter(s => s.id !== id);
     if (filtered.length !== suppliers.length) {
       this.save('suppliers', filtered);
+      cloudDb.deleteSupplier(id);
 
       serverSyncService.recordEvent({
         action: 'SUPPLIER_DELETED',
@@ -896,6 +963,7 @@ export class AppDatabase {
     };
     expenses.unshift(newExp);
     this.save('expenses', expenses);
+    cloudDb.upsertExpense(newExp);
 
     serverSyncService.recordEvent({
       action: 'EXPENSE_ADDED',
@@ -916,6 +984,7 @@ export class AppDatabase {
     const filtered = expenses.filter(e => e.id !== id);
     if (filtered.length !== expenses.length) {
       this.save('expenses', filtered);
+      cloudDb.deleteExpense(id);
 
       serverSyncService.recordEvent({
         action: 'EXPENSE_DELETED',
@@ -946,6 +1015,7 @@ export class AppDatabase {
     };
     list.unshift(item);
     this.save('debt_transactions', list);
+    cloudDb.upsertDebtTransaction(item);
     return item;
   }
 

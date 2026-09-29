@@ -12,6 +12,7 @@
     "electron:build": "vite build && electron-builder"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
     "clsx": "^2.1.1",
     "dexie": "^4.0.11",
     "jsbarcode": "^3.11.6",
