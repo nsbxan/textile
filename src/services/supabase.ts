@@ -66,13 +66,26 @@ alter table debt_transactions enable row level security;
 alter table settings enable row level security;
 
 -- Ochiq ruxsat siyosati (Anon kalit orqali to'g'ridan-to'g'ri o'qish va yozish uchun)
-create policy if not exists "Allow all for products" on products for all using (true) with check (true);
-create policy if not exists "Allow all for sales" on sales for all using (true) with check (true);
-create policy if not exists "Allow all for customers" on customers for all using (true) with check (true);
-create policy if not exists "Allow all for suppliers" on suppliers for all using (true) with check (true);
-create policy if not exists "Allow all for expenses" on expenses for all using (true) with check (true);
-create policy if not exists "Allow all for debt_transactions" on debt_transactions for all using (true) with check (true);
-create policy if not exists "Allow all for settings" on settings for all using (true) with check (true);
+drop policy if exists "Allow all for products" on products;
+create policy "Allow all for products" on products for all using (true) with check (true);
+
+drop policy if exists "Allow all for sales" on sales;
+create policy "Allow all for sales" on sales for all using (true) with check (true);
+
+drop policy if exists "Allow all for customers" on customers;
+create policy "Allow all for customers" on customers for all using (true) with check (true);
+
+drop policy if exists "Allow all for suppliers" on suppliers;
+create policy "Allow all for suppliers" on suppliers for all using (true) with check (true);
+
+drop policy if exists "Allow all for expenses" on expenses;
+create policy "Allow all for expenses" on expenses for all using (true) with check (true);
+
+drop policy if exists "Allow all for debt_transactions" on debt_transactions;
+create policy "Allow all for debt_transactions" on debt_transactions for all using (true) with check (true);
+
+drop policy if exists "Allow all for settings" on settings;
+create policy "Allow all for settings" on settings for all using (true) with check (true);
 `;
 
 class CloudDatabaseService {
