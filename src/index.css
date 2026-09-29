@@ -1,0 +1,267 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-main: #f8fafc;
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --border-color: #e2e8f0;
+    --card-bg: #ffffff;
+  }
+
+  .dark {
+    --bg-main: #0b0f19;
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --border-color: #1e293b;
+    --card-bg: #111827;
+  }
+
+  * {
+    /* Ko'zga yoqimli, tiniq va aniq chegaralar */
+    border-color: var(--border-color);
+  }
+
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Tiniq va ixcham scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background: #334155;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+  }
+
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}
+
+/* ==========================================================================
+   Tiniq, Zamonaviy va Ko'zga Yoqimli Flat Dizayn (Blur & Murakkab Soyalarsiz)
+   ========================================================================== */
+
+/* Interaktiv tugmalar (Silliq va tezkor) */
+.oxista-btn,
+.interactive-press {
+  position: relative;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.oxista-btn:active,
+.interactive-press:active {
+  transform: scale(0.97);
+}
+
+/* Tiniq Panel - 0 blur, 0 og'ir soya, sof va ko'zga yoqimli sirt */
+.glass-panel {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.dark .glass-panel {
+  background: #111827;
+  border: 1px solid #1e293b;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Tiniq Karta - Oq / To'q silliq sirt, 1px aniq chegara */
+.glass-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.dark .glass-card {
+  background: #131c2e;
+  border: 1px solid #1e293b;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.glass-card:hover {
+  border-color: #cbd5e1;
+}
+
+.dark .glass-card:hover {
+  border-color: #334155;
+}
+
+/* Tugmalar uchun tiniq, sof ranglar */
+.btn-ios-blue {
+  background: #2563eb;
+  color: #ffffff;
+  border: 1px solid #1d4ed8;
+}
+.btn-ios-blue:hover {
+  background: #1d4ed8;
+}
+.btn-ios-blue:active {
+  background: #1e40af;
+}
+
+.btn-ios-green {
+  background: #059669;
+  color: #ffffff;
+  border: 1px solid #047857;
+}
+.btn-ios-green:hover {
+  background: #047857;
+}
+.btn-ios-green:active {
+  background: #065f46;
+}
+
+.btn-ios-red {
+  background: #dc2626;
+  color: #ffffff;
+  border: 1px solid #b91c1c;
+}
+.btn-ios-red:hover {
+  background: #b91c1c;
+}
+.btn-ios-red:active {
+  background: #991b1b;
+}
+
+.btn-ios-white {
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+}
+.btn-ios-white:hover {
+  background: #f1f5f9;
+}
+
+.btn-ios-black {
+  background: #0f172a;
+  color: #ffffff;
+  border: 1px solid #334155;
+}
+.btn-ios-black:hover {
+  background: #1e293b;
+}
+
+.btn-ios-gray {
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+}
+.dark .btn-ios-gray {
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+}
+.btn-ios-gray:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+.dark .btn-ios-gray:hover {
+  background: #334155;
+  color: #ffffff;
+}
+
+/* Spatial Capsule - Tiniq, soyasiz va blursiz kapsula */
+.spatial-capsule {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 9999px;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Soat sekundlari uchun silliq 3D flip / slide effekti */
+@keyframes secTickFlip {
+  0% {
+    opacity: 0.2;
+    transform: translateY(-6px) scale(0.85);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(1px) scale(1.08);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-sec-tick {
+  display: inline-block;
+  animation: secTickFlip 0.38s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Print CSS */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-receipt, #printable-receipt * {
+    visibility: visible;
+  }
+  #printable-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 10px !important;
+    color: #000 !important;
+    background: #fff !important;
+    font-family: 'JetBrains Mono', monospace, Courier, monospace !important;
+  }
+  
+  #printable-barcodes, #printable-barcodes * {
+    visibility: visible;
+  }
+  #printable-barcodes {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 10px !important;
+    color: #000 !important;
+    background: #fff !important;
+  }
+}
