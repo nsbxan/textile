@@ -41,6 +41,7 @@ export interface Customer {
   notes?: string;
   storeId?: string;     // 'store_1' (TEXTILE PRO)
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Supplier {
@@ -52,6 +53,7 @@ export interface Supplier {
   notes?: string;
   storeId?: string;     // 'store_1' (TEXTILE PRO)
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface CartItem {

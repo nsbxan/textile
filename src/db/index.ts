@@ -147,13 +147,27 @@ export class AppDatabase {
       // 1. PRODUCTS
       const localProducts = this.load<Product[]>('products', []);
       if (data.products && data.products.length > 0) {
+        const localProdMap = new Map(localProducts.map(p => [p.id, p]));
+        const mergedProducts = data.products.map(cloudP => {
+          const localP = localProdMap.get(cloudP.id);
+          if (!localP) return cloudP;
+          const localTime = new Date(localP.updatedAt || localP.createdAt || 0).getTime();
+          const cloudTime = new Date(cloudP.updatedAt || cloudP.createdAt || 0).getTime();
+          if (localTime >= cloudTime) {
+            if (localTime > cloudTime || localP.stock !== cloudP.stock) {
+              cloudDb.upsertProduct(localP).catch(() => {});
+            }
+            return localP;
+          }
+          return cloudP;
+        });
         const cloudIds = new Set(data.products.map(p => p.id));
         const missingInCloud = localProducts.filter(p => !cloudIds.has(p.id));
         for (const p of missingInCloud) {
           cloudDb.upsertProduct(p).catch(() => {});
         }
-        const mergedProducts = [...data.products, ...missingInCloud];
-        if (this.saveSilent('products', mergedProducts)) {
+        const finalProducts = [...mergedProducts, ...missingInCloud];
+        if (this.saveSilent('products', finalProducts)) {
           changed = true;
         }
       } else if (localProducts.length > 0) {
@@ -183,13 +197,27 @@ export class AppDatabase {
       // 3. CUSTOMERS
       const localCustomers = this.load<Customer[]>('customers', []);
       if (data.customers && data.customers.length > 0) {
+        const localCustMap = new Map(localCustomers.map(c => [c.id, c]));
+        const mergedCusts = data.customers.map(cloudC => {
+          const localC = localCustMap.get(cloudC.id);
+          if (!localC) return cloudC;
+          const localTime = new Date(localC.updatedAt || localC.createdAt || 0).getTime();
+          const cloudTime = new Date(cloudC.updatedAt || cloudC.createdAt || 0).getTime();
+          if (localTime >= cloudTime) {
+            if (localTime > cloudTime || localC.balance !== cloudC.balance) {
+              cloudDb.upsertCustomer(localC).catch(() => {});
+            }
+            return localC;
+          }
+          return cloudC;
+        });
         const cloudCustIds = new Set(data.customers.map(c => c.id));
         const missingCusts = localCustomers.filter(c => !cloudCustIds.has(c.id));
         for (const c of missingCusts) {
           cloudDb.upsertCustomer(c).catch(() => {});
         }
-        const mergedCusts = [...data.customers, ...missingCusts];
-        if (this.saveSilent('customers', mergedCusts)) {
+        const finalCusts = [...mergedCusts, ...missingCusts];
+        if (this.saveSilent('customers', finalCusts)) {
           changed = true;
         }
       } else if (localCustomers.length > 0) {
@@ -201,13 +229,27 @@ export class AppDatabase {
       // 4. SUPPLIERS
       const localSuppliers = this.load<Supplier[]>('suppliers', []);
       if (data.suppliers && data.suppliers.length > 0) {
+        const localSupMap = new Map(localSuppliers.map(s => [s.id, s]));
+        const mergedSups = data.suppliers.map(cloudS => {
+          const localS = localSupMap.get(cloudS.id);
+          if (!localS) return cloudS;
+          const localTime = new Date(localS.updatedAt || localS.createdAt || 0).getTime();
+          const cloudTime = new Date(cloudS.updatedAt || cloudS.createdAt || 0).getTime();
+          if (localTime >= cloudTime) {
+            if (localTime > cloudTime || localS.balance !== cloudS.balance) {
+              cloudDb.upsertSupplier(localS).catch(() => {});
+            }
+            return localS;
+          }
+          return cloudS;
+        });
         const cloudSupIds = new Set(data.suppliers.map(s => s.id));
         const missingSups = localSuppliers.filter(s => !cloudSupIds.has(s.id));
         for (const s of missingSups) {
           cloudDb.upsertSupplier(s).catch(() => {});
         }
-        const mergedSups = [...data.suppliers, ...missingSups];
-        if (this.saveSilent('suppliers', mergedSups)) {
+        const finalSups = [...mergedSups, ...missingSups];
+        if (this.saveSilent('suppliers', finalSups)) {
           changed = true;
         }
       } else if (localSuppliers.length > 0) {
@@ -635,7 +677,9 @@ export class AppDatabase {
       const customer = customers.find(c => c.id === sale.customerId);
       if (customer) {
         customer.balance -= sale.paidDebt;
+        customer.updatedAt = now;
         this.save('customers', customers);
+        cloudDb.upsertCustomer(customer);
 
         // Qarz operatsiyasini yozish
         this.addDebtTransaction({
@@ -677,10 +721,13 @@ export class AppDatabase {
 
     // Ombordagi tovarlarni qaytarish
     const products = this.getProducts('all');
+    const now = new Date().toISOString();
     for (const item of sale.items) {
       const prod = products.find(p => p.id === item.productId);
       if (prod) {
         prod.stock += item.quantity;
+        prod.updatedAt = now;
+        cloudDb.upsertProduct(prod);
       }
     }
     this.save('products', products);
@@ -690,8 +737,12 @@ export class AppDatabase {
       const customers = this.getCustomers('all');
       const cust = customers.find(c => c.id === sale.customerId);
       if (cust) {
-        cust.balance += sale.paidDebt;
+        const prevBal = Number(cust.balance) || 0;
+        const newBal = Math.round((prevBal + Number(sale.paidDebt)) * 100) / 100;
+        cust.balance = Math.abs(newBal) < 0.009 ? 0 : newBal;
+        cust.updatedAt = now;
         this.save('customers', customers);
+        cloudDb.upsertCustomer(cust);
       }
     }
 
@@ -739,6 +790,8 @@ export class AppDatabase {
         const updated: Customer = {
           ...customers[index],
           ...customer,
+          balance: Number(customer.balance !== undefined ? customer.balance : customers[index].balance) || 0,
+          updatedAt: now,
         };
         customers[index] = updated;
         this.save('customers', customers);
@@ -767,6 +820,7 @@ export class AppDatabase {
       notes: customer.notes || '',
       storeId: customer.storeId || this.getDeviceStoreId(),
       createdAt: now,
+      updatedAt: now,
     };
 
     customers.unshift(newCustomer);
@@ -814,14 +868,22 @@ export class AppDatabase {
     const cust = customers.find(c => c.id === customerId);
     if (!cust) return false;
 
-    cust.balance += amount;
+    const numAmount = Math.max(0, Number(amount) || 0);
+    if (numAmount <= 0) return false;
+
+    const prevBalance = Number(cust.balance) || 0;
+    const newBalance = Math.round((prevBalance + numAmount) * 100) / 100;
+    // Agar qarz to'liq yopilsa yoki nolga juda yaqin bo'lsa, aniq 0 qilamiz
+    cust.balance = Math.abs(newBalance) < 0.009 ? 0 : newBalance;
+    cust.updatedAt = new Date().toISOString();
     this.save('customers', customers);
+    cloudDb.upsertCustomer(cust);
 
     this.addDebtTransaction({
       type: 'customer',
       entityId: cust.id,
       entityName: cust.name,
-      amount: amount,
+      amount: numAmount,
       paymentMethod: paymentMethod,
       action: 'pay_debt',
       notes: notes || 'Qarz to\'lovi qabul qilindi',
@@ -833,14 +895,14 @@ export class AppDatabase {
       entityId: cust.id,
       storeId: cust.storeId || this.getDeviceStoreId(),
       deviceStoreId: this.getDeviceStoreId(),
-      description: `Qarz to'landi: ${cust.name} (+$${amount})`,
-      payload: { customerId: cust.id, customerName: cust.name, amount, paymentMethod, notes },
+      description: `Qarz to'landi: ${cust.name} (+$${numAmount})`,
+      payload: { customerId: cust.id, customerName: cust.name, amount: numAmount, paymentMethod, notes },
     });
 
     // Telegram Botga qarzdordan pul tushganini yuborish
     telegramService.notifyDebtPayment(
       cust.name,
-      amount,
+      numAmount,
       paymentMethod,
       notes,
       cust.balance < 0 ? Math.abs(cust.balance) : 0
@@ -864,6 +926,8 @@ export class AppDatabase {
         const updated: Supplier = {
           ...suppliers[index],
           ...supplier,
+          balance: Number(supplier.balance !== undefined ? supplier.balance : suppliers[index].balance) || 0,
+          updatedAt: now,
         };
         suppliers[index] = updated;
         this.save('suppliers', suppliers);
@@ -891,6 +955,7 @@ export class AppDatabase {
       balance: Number(supplier.balance) || 0,
       notes: supplier.notes || '',
       createdAt: now,
+      updatedAt: now,
     };
 
     suppliers.unshift(newSupplier);
@@ -985,7 +1050,9 @@ export class AppDatabase {
       const supplier = suppliers.find(s => s.id === order.supplierId);
       if (supplier) {
         supplier.balance += order.debtAmount; // Bizning qarzimiz oshadi
+        supplier.updatedAt = now;
         this.save('suppliers', suppliers);
+        cloudDb.upsertSupplier(supplier);
       }
     }
 
@@ -1010,14 +1077,21 @@ export class AppDatabase {
     const sup = suppliers.find(s => s.id === supplierId);
     if (!sup) return false;
 
-    sup.balance = Math.max(0, sup.balance - amount);
+    const numAmount = Math.max(0, Number(amount) || 0);
+    if (numAmount <= 0) return false;
+
+    const prevBalance = Number(sup.balance) || 0;
+    const newBalance = Math.max(0, Math.round((prevBalance - numAmount) * 100) / 100);
+    sup.balance = Math.abs(newBalance) < 0.009 ? 0 : newBalance;
+    sup.updatedAt = new Date().toISOString();
     this.save('suppliers', suppliers);
+    cloudDb.upsertSupplier(sup);
 
     this.addDebtTransaction({
       type: 'supplier',
       entityId: sup.id,
       entityName: sup.name,
-      amount: amount,
+      amount: numAmount,
       paymentMethod: paymentMethod,
       action: 'pay_debt',
       notes: notes || 'Yetkazib beruvchiga qarz to\'landi',

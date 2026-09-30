@@ -50,8 +50,8 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
 
   const transactions = AppDatabase.getDebtTransactions();
 
-  const totalDebtSum = customers.reduce((sum, c) => (c.balance < 0 ? sum + Math.abs(c.balance) : sum), 0);
-  const debtorCustomersCount = customers.filter(c => c.balance < 0).length;
+  const totalDebtSum = customers.reduce((sum, c) => (c.balance < -0.01 ? sum + Math.abs(c.balance) : sum), 0);
+  const debtorCustomersCount = customers.filter(c => c.balance < -0.01).length;
 
   const filteredCustomers = customers.filter(c => {
     const query = searchQuery.toLowerCase().trim();
@@ -60,7 +60,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
       c.phone.includes(query) || 
       (c.address && c.address.toLowerCase().includes(query));
 
-    if (filterType === 'debtors') return matchesSearch && c.balance < 0;
+    if (filterType === 'debtors') return matchesSearch && c.balance < -0.01;
     return matchesSearch;
   });
 
@@ -111,11 +111,20 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
       return;
     }
 
+    const currentDebt = Math.abs(selectedCustomer.balance);
+    const remaining = Math.max(0, currentDebt - amt);
+
     AppDatabase.payCustomerDebt(selectedCustomer.id, amt, payMethod, payNotes);
     setSelectedCustomer(null);
     setPayAmount('');
     setPayNotes('');
     onRefresh();
+
+    if (remaining <= 0.01) {
+      alert(`To'lov qabul qilindi ($${amt.toFixed(2)})!\n${selectedCustomer.name} ning qarzi to'liq yopildi ($0.00). Mijozni 'Barchasi' bo'limida ko'rishingiz mumkin.`);
+    } else {
+      alert(`To'lov qabul qilindi ($${amt.toFixed(2)})!\n${selectedCustomer.name} ning qolgan qarzi: $${remaining.toFixed(2)}`);
+    }
   };
 
   const handleDeleteCustomer = (id: string, cName: string) => {
@@ -193,19 +202,29 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
           <div className="flex rounded-xl bg-slate-200 dark:bg-slate-800 p-1 border border-slate-300 dark:border-slate-700 text-xs font-bold">
             <button
               onClick={() => setFilterType('debtors')}
-              className={`px-3 py-1 rounded-lg transition-all interactive-press ${
+              className={`px-3 py-1 rounded-lg transition-all interactive-press flex items-center gap-1.5 ${
                 filterType === 'debtors' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400'
               }`}
             >
-              Qarzdorlar
+              <span>Qarzdorlar</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-black ${
+                filterType === 'debtors' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300'
+              }`}>
+                {debtorCustomersCount}
+              </span>
             </button>
             <button
               onClick={() => setFilterType('all')}
-              className={`px-3 py-1 rounded-lg transition-all interactive-press ${
+              className={`px-3 py-1 rounded-lg transition-all interactive-press flex items-center gap-1.5 ${
                 filterType === 'all' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400'
               }`}
             >
-              Barchasi
+              <span>Barchasi</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-black ${
+                filterType === 'all' ? 'bg-white/20 text-white' : 'bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+              }`}>
+                {customers.length}
+              </span>
             </button>
           </div>
         </div>
@@ -236,7 +255,7 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800 text-xs sm:text-sm">
               {filteredCustomers.map((cust) => {
-                const isDebtor = cust.balance < 0;
+                const isDebtor = cust.balance < -0.01;
                 return (
                   <tr key={cust.id} className="hover:bg-slate-100/60 dark:hover:bg-slate-800/60 transition-colors">
                     <td className={`py-3 px-4 font-bold text-slate-900 dark:text-white ${isLargeText ? 'text-base' : 'text-sm'}`}>
@@ -361,17 +380,27 @@ export const DebtsView: React.FC<DebtsViewProps> = ({
                 />
                 
                 {/* Touch Quick Amount Presets */}
-                <div className="grid grid-cols-4 gap-1.5 mt-2">
-                  {[50, 100, 200, 500].map((amt) => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => setPayAmount(amt.toString())}
-                      className="py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold font-mono border border-slate-200 dark:border-slate-700 interactive-press"
-                    >
-                      +${amt}
-                    </button>
-                  ))}
+                <div className="space-y-1.5 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setPayAmount(Math.abs(selectedCustomer.balance).toFixed(2))}
+                    className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black font-mono shadow-sm interactive-press flex items-center justify-center gap-1.5"
+                  >
+                    <span>To'liq qarzni yopish ({formatUSD(Math.abs(selectedCustomer.balance))})</span>
+                  </button>
+
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[50, 100, 200, 500].map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => setPayAmount(amt.toString())}
+                        className="py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold font-mono border border-slate-200 dark:border-slate-700 interactive-press"
+                      >
+                        +${amt}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="text-xs font-mono font-semibold text-slate-500 dark:text-slate-400 mt-2 text-right">

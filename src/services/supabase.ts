@@ -197,22 +197,34 @@ class CloudDatabaseService {
         debtsRes,
         settingsRes
       ] = await Promise.all([
-        this.client.from('products').select('data'),
-        this.client.from('sales').select('data'),
-        this.client.from('customers').select('data'),
-        this.client.from('suppliers').select('data'),
-        this.client.from('expenses').select('data'),
-        this.client.from('debt_transactions').select('data'),
+        this.client.from('products').select('data, updated_at'),
+        this.client.from('sales').select('data, updated_at'),
+        this.client.from('customers').select('data, updated_at'),
+        this.client.from('suppliers').select('data, updated_at'),
+        this.client.from('expenses').select('data, updated_at'),
+        this.client.from('debt_transactions').select('data, updated_at'),
         this.client.from('settings').select('data').eq('key', 'store_settings').maybeSingle(),
       ]);
 
       const result: any = {};
-      if (prodsRes.data && prodsRes.data.length > 0) result.products = prodsRes.data.map(r => r.data);
-      if (salesRes.data && salesRes.data.length > 0) result.sales = salesRes.data.map(r => r.data);
-      if (custsRes.data && custsRes.data.length > 0) result.customers = custsRes.data.map(r => r.data);
-      if (supsRes.data && supsRes.data.length > 0) result.suppliers = supsRes.data.map(r => r.data);
-      if (expsRes.data && expsRes.data.length > 0) result.expenses = expsRes.data.map(r => r.data);
-      if (debtsRes.data && debtsRes.data.length > 0) result.debtTransactions = debtsRes.data.map(r => r.data);
+      if (prodsRes.data && prodsRes.data.length > 0) {
+        result.products = prodsRes.data.map(r => ({ ...r.data, updatedAt: r.data?.updatedAt || r.updated_at }));
+      }
+      if (salesRes.data && salesRes.data.length > 0) {
+        result.sales = salesRes.data.map(r => ({ ...r.data, updatedAt: r.data?.updatedAt || r.updated_at }));
+      }
+      if (custsRes.data && custsRes.data.length > 0) {
+        result.customers = custsRes.data.map(r => ({ ...r.data, updatedAt: r.data?.updatedAt || r.updated_at }));
+      }
+      if (supsRes.data && supsRes.data.length > 0) {
+        result.suppliers = supsRes.data.map(r => ({ ...r.data, updatedAt: r.data?.updatedAt || r.updated_at }));
+      }
+      if (expsRes.data && expsRes.data.length > 0) {
+        result.expenses = expsRes.data.map(r => ({ ...r.data, updatedAt: r.data?.updatedAt || r.updated_at }));
+      }
+      if (debtsRes.data && debtsRes.data.length > 0) {
+        result.debtTransactions = debtsRes.data.map(r => ({ ...r.data, updatedAt: r.data?.updatedAt || r.updated_at }));
+      }
       if (settingsRes.data && settingsRes.data.data) result.settings = settingsRes.data.data;
 
       return result;
