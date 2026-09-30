@@ -220,12 +220,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     reader.readAsText(file);
   };
 
+  const [isClearingAll, setIsClearingAll] = useState(false);
+
   const handleClearAllData = async () => {
-    if (window.confirm("DIQQAT! Barcha matolar, savdolar, mijozlar, qarzlar va xarajatlar ham brauzerdan, ham Supabase bulutli bazasidan butunlay o'chiriladi. Haqiqatdan ham bazani tozalab, 0 dan boshlamoqchimisiz?")) {
-      AppDatabase.clearAllData();
-      await cloudDb.clearAllCloudData();
-      onRefreshAll();
-      alert("Barcha demo ma'lumotlar o'chirildi! Sayt va bulutli baza 0 dan toza holatga keltirildi.");
+    const confirmed = window.confirm(
+      "DIQQAT! Barcha matolar, savdolar, mijozlar, qarzlar va xarajatlar ham brauzerdan, ham Supabase bulutli bazasidan BUTUNLAY O'CHIRILADI.\n\nSayt va barcha ulangan qurilmalar 0 dan toza holatga keladi.\n\nHaqiqatdan ham hamma narsani o'chirib, 0 dan boshlamoqchimisiz?"
+    );
+    if (!confirmed) return;
+
+    setIsClearingAll(true);
+    try {
+      const res = await AppDatabase.adminFullReset();
+      if (res.success) {
+        soundManager.playSuccessSound();
+        alert("Barcha ma'lumotlar muvaffaqiyatli o'chirildi! Sayt va bulut 0 dan toza boshlandi.");
+        window.location.reload();
+      } else {
+        alert(res.message);
+      }
+    } finally {
+      setIsClearingAll(false);
     }
   };
 
@@ -888,13 +902,43 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               />
             </label>
 
+          </div>
+        </div>
+
+        {/* SUPER ADMIN: BARCHA MA'LUMOTLARNI 0 DAN TOZALASH (DANGER ZONE) */}
+        <div className="p-5 rounded-2xl bg-rose-500/5 dark:bg-rose-950/20 border-2 border-rose-500/40 space-y-3.5">
+          <div className="flex items-center justify-between border-b border-rose-500/20 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center font-black shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-rose-600 dark:text-rose-400 flex items-center gap-2">
+                  <span>Super Admin: Tizimni 0 dan Tozalash</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-600 text-white uppercase tracking-wider">
+                    To'liq Tozalash
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Barcha kiritilgan matolar, savdolar, qarzdorliklar va xarajatlarni bulutdan (Supabase) va barcha qurilmalardan butunlay o'chiradi
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-700 dark:text-slate-300 font-medium">
+            Ushbu amal barcha ulangan telefon va kompyuterlardagi ma'lumotlarni ham bir zumda tozalab, tizimni yangi boshlanayotgan toza holatga keltiradi.
+          </p>
+
+          <div className="pt-1">
             <button
               type="button"
               onClick={handleClearAllData}
-              className="flex items-center justify-center gap-2 p-3 rounded-xl border border-rose-300 dark:border-rose-900 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all interactive-press"
+              disabled={isClearingAll}
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30 transition-all interactive-press disabled:opacity-50"
             >
-              <Trash2 className="w-4 h-4" />
-              <span>Barcha Ma'lumotlarni Tozalash (0 dan boshlash)</span>
+              <Trash2 className={`w-4 h-4 ${isClearingAll ? 'animate-spin' : ''}`} />
+              <span>{isClearingAll ? "Tozalanmoqda..." : "Barcha Ma'lumotlarni O'chirish va 0 dan Boshlash (Bulut + Sayt)"}</span>
             </button>
           </div>
         </div>

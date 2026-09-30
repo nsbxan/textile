@@ -5,7 +5,7 @@ import { telegramService } from '../services/telegramService';
 import { ParsedFabricItem } from '../utils/fabricDocumentParser';
 import { cloudDb, DEFAULT_SUPABASE_CONFIG } from '../services/supabase';
 
-const STORAGE_PREFIX = 'savdo_erp_';
+const STORAGE_PREFIX = 'savdo_erp_v2_';
 
 export const DEFAULT_AI_CONFIG_DB: AiConfig = {
   apiKey: ((import.meta as any).env?.VITE_GEMINI_API_KEY) || (typeof atob === 'function' ? atob('QVEuQWI4Uk42TEJXTExKVWdKLTlfdndrM3RpSG42NnJkS0dEdWl2eGNsLTJ4bkFESTZJdVE=') : ''),
@@ -135,7 +135,7 @@ export class AppDatabase {
     });
   }
 
-  // Bulutli bazadan barcha ma'lumotlarni tortib olish va 2 tomonlama sinxronizatsiya (Cloud Sync)
+  // Bulutli bazadan barcha ma'lumotlarni tortib olish va sinxronizatsiya (Cloud Sync)
   static async syncFromCloud(): Promise<boolean> {
     if (!cloudDb.isConfigured()) return false;
     try {
@@ -144,137 +144,44 @@ export class AppDatabase {
 
       let changed = false;
 
-      // 0. Baza tozalash (Wipe) sinxronizatsiyasi
-      const localCleared = localStorage.getItem(STORAGE_PREFIX + 'last_cleared_at') || '';
-      const cloudCleared = data.settings?.lastClearedAt || '';
-
-      if (cloudCleared && (!localCleared || cloudCleared > localCleared)) {
-        localStorage.setItem(STORAGE_PREFIX + 'last_cleared_at', cloudCleared);
-      }
-      const effectiveCleared = (cloudCleared && cloudCleared > localCleared) ? cloudCleared : localCleared;
-
       // 1. PRODUCTS
       if (data.products !== undefined) {
-        let prodsToSave = data.products;
-        const localProds = this.load<Product[]>('products', []);
-        const cloudIds = new Set(data.products.map(p => p.id));
-        const offlineCreated = localProds.filter(p => 
-          !cloudIds.has(p.id) && 
-          (!effectiveCleared || (p.createdAt && p.createdAt > effectiveCleared))
-        );
-        if (offlineCreated.length > 0) {
-          for (const op of offlineCreated) {
-            cloudDb.upsertProduct(op);
-          }
-          prodsToSave = [...offlineCreated, ...data.products];
-        }
-
-        if (this.saveSilent('products', prodsToSave)) {
+        if (this.saveSilent('products', data.products)) {
           changed = true;
         }
       }
 
       // 2. SALES
       if (data.sales !== undefined) {
-        let salesToSave = data.sales;
-        const localSales = this.load<Sale[]>('sales', []);
-        const cloudIds = new Set(data.sales.map(s => s.id));
-        const offlineCreated = localSales.filter(s => 
-          !cloudIds.has(s.id) && 
-          (!effectiveCleared || (s.createdAt && s.createdAt > effectiveCleared))
-        );
-        if (offlineCreated.length > 0) {
-          for (const os of offlineCreated) {
-            cloudDb.upsertSale(os);
-          }
-          salesToSave = [...offlineCreated, ...data.sales];
-        }
-
-        if (this.saveSilent('sales', salesToSave)) {
+        if (this.saveSilent('sales', data.sales)) {
           changed = true;
         }
       }
 
       // 3. CUSTOMERS
       if (data.customers !== undefined) {
-        let custsToSave = data.customers;
-        const localCusts = this.load<Customer[]>('customers', []);
-        const cloudIds = new Set(data.customers.map(c => c.id));
-        const offlineCreated = localCusts.filter(c => 
-          !cloudIds.has(c.id) && 
-          (!effectiveCleared || (c.createdAt && c.createdAt > effectiveCleared))
-        );
-        if (offlineCreated.length > 0) {
-          for (const oc of offlineCreated) {
-            cloudDb.upsertCustomer(oc);
-          }
-          custsToSave = [...offlineCreated, ...data.customers];
-        }
-
-        if (this.saveSilent('customers', custsToSave)) {
+        if (this.saveSilent('customers', data.customers)) {
           changed = true;
         }
       }
 
       // 4. SUPPLIERS
       if (data.suppliers !== undefined) {
-        let supsToSave = data.suppliers;
-        const localSups = this.load<Supplier[]>('suppliers', []);
-        const cloudIds = new Set(data.suppliers.map(s => s.id));
-        const offlineCreated = localSups.filter(s => 
-          !cloudIds.has(s.id) && 
-          (!effectiveCleared || (s.createdAt && s.createdAt > effectiveCleared))
-        );
-        if (offlineCreated.length > 0) {
-          for (const os of offlineCreated) {
-            cloudDb.upsertSupplier(os);
-          }
-          supsToSave = [...offlineCreated, ...data.suppliers];
-        }
-
-        if (this.saveSilent('suppliers', supsToSave)) {
+        if (this.saveSilent('suppliers', data.suppliers)) {
           changed = true;
         }
       }
 
       // 5. EXPENSES
       if (data.expenses !== undefined) {
-        let expsToSave = data.expenses;
-        const localExps = this.load<Expense[]>('expenses', []);
-        const cloudIds = new Set(data.expenses.map(e => e.id));
-        const offlineCreated = localExps.filter(e => 
-          !cloudIds.has(e.id) && 
-          (!effectiveCleared || (e.createdAt && e.createdAt > effectiveCleared))
-        );
-        if (offlineCreated.length > 0) {
-          for (const oe of offlineCreated) {
-            cloudDb.upsertExpense(oe);
-          }
-          expsToSave = [...offlineCreated, ...data.expenses];
-        }
-
-        if (this.saveSilent('expenses', expsToSave)) {
+        if (this.saveSilent('expenses', data.expenses)) {
           changed = true;
         }
       }
 
       // 6. DEBT TRANSACTIONS
       if (data.debtTransactions !== undefined) {
-        let debtsToSave = data.debtTransactions;
-        const localDebts = this.load<DebtTransaction[]>('debt_transactions', []);
-        const cloudIds = new Set(data.debtTransactions.map(d => d.id));
-        const offlineCreated = localDebts.filter(d => 
-          !cloudIds.has(d.id) && 
-          (!effectiveCleared || (d.createdAt && d.createdAt > effectiveCleared))
-        );
-        if (offlineCreated.length > 0) {
-          for (const od of offlineCreated) {
-            cloudDb.upsertDebtTransaction(od);
-          }
-          debtsToSave = [...offlineCreated, ...data.debtTransactions];
-        }
-
-        if (this.saveSilent('debt_transactions', debtsToSave)) {
+        if (this.saveSilent('debt_transactions', data.debtTransactions)) {
           changed = true;
         }
       }
@@ -1223,27 +1130,56 @@ export class AppDatabase {
     }
   }
 
-  // Tozalash (Barcha ma'lumotlarni o'chirish va 0 dan boshlash)
-  static clearAllData(): void {
+  // Super Admin: Barcha ma'lumotlarni o'chirish va 0 dan boshlash (Bulut + Sayt + Barcha Qurilmalar)
+  static async adminFullReset(): Promise<{ success: boolean; message: string }> {
     const now = new Date().toISOString();
     try {
-      localStorage.setItem(STORAGE_PREFIX + 'last_cleared_at', now);
-    } catch {}
-    this.save('products', []);
-    this.save('customers', []);
-    this.save('suppliers', []);
-    this.save('sales', []);
-    this.save('expenses', []);
-    this.save('supply_orders', []);
-    this.save('debt_transactions', []);
-    this.save('sync_events', []);
+      // 1. Mahalliy barcha kalitlarni (v1 va v2) diskdan tozalash
+      const keysToPurge = [
+        'products', 'customers', 'suppliers', 'sales', 
+        'expenses', 'supply_orders', 'debt_transactions', 'sync_events'
+      ];
+      keysToPurge.forEach(k => {
+        localStorage.removeItem('savdo_erp_' + k);
+        localStorage.removeItem('savdo_erp_v2_' + k);
+      });
 
-    const settings = this.getSettings();
-    settings.lastClearedAt = now;
-    this.save('settings', settings);
-    cloudDb.upsertSettings(settings).catch(() => {});
-    cloudDb.clearAllCloudData().catch(() => {});
-    window.dispatchEvent(new Event('erp_data_changed'));
+      localStorage.setItem(STORAGE_PREFIX + 'last_cleared_at', now);
+      localStorage.setItem('savdo_erp_last_cleared_at', now);
+
+      this.save('products', []);
+      this.save('customers', []);
+      this.save('suppliers', []);
+      this.save('sales', []);
+      this.save('expenses', []);
+      this.save('supply_orders', []);
+      this.save('debt_transactions', []);
+      this.save('sync_events', []);
+
+      const settings = this.getSettings();
+      settings.lastClearedAt = now;
+      this.save('settings', settings);
+
+      // 2. Supabase bulutli bazasini tozalash va sozlamalarni yangilash
+      if (cloudDb.isConfigured()) {
+        await cloudDb.clearAllCloudData();
+        await cloudDb.upsertSettings(settings);
+      }
+
+      window.dispatchEvent(new Event('erp_data_changed'));
+      return { 
+        success: true, 
+        message: "Barcha ma'lumotlar bulutdan ham, saytdan ham 100% tozalandi! Tizim 0 dan toza holatga keltirildi." 
+      };
+    } catch (e: any) {
+      console.error('adminFullReset error:', e);
+      return { success: false, message: `Tozalashda xatolik: ${e?.message || e}` };
+    }
+  }
+
+  // Tozalash (Barcha ma'lumotlarni o'chirish va 0 dan boshlash)
+  static clearAllData(): void {
+    this.adminFullReset();
   }
 
   static resetToDemo(): void {

@@ -20,6 +20,13 @@ import { soundManager } from './utils/sound';
 import { AppLanguage, getSavedLanguage, setSavedLanguage, applyDomTranslations, setupLanguageObserver } from './utils/i18n';
 
 export function App() {
+  // Eski demo/kesh ma'lumotlarni to'liq yo'q qilish (v1 dan v2 ga toza o'tish)
+  try {
+    ['products', 'sales', 'customers', 'suppliers', 'expenses', 'debt_transactions', 'supply_orders'].forEach(k => {
+      localStorage.removeItem('savdo_erp_' + k);
+    });
+  } catch {}
+
   const [currentTab, setCurrentTab] = useState<ViewTab>('pos');
   
   // Theme state: 'dark' | 'light'
