@@ -144,176 +144,44 @@ export class AppDatabase {
 
       let changed = false;
 
-      // 0. BAZA BUTUNLAY TOZALANGAN BO'LSA (Cloud Wipe sync)
-      const localClearedAt = localStorage.getItem(STORAGE_PREFIX + 'last_cleared_at') || '';
-      const cloudClearedAt = data.settings?.lastClearedAt || '';
-      if (cloudClearedAt && (!localClearedAt || new Date(cloudClearedAt).getTime() > new Date(localClearedAt).getTime())) {
-        localStorage.setItem(STORAGE_PREFIX + 'last_cleared_at', cloudClearedAt);
-        this.saveSilent('products', data.products || []);
-        this.saveSilent('customers', data.customers || []);
-        this.saveSilent('suppliers', data.suppliers || []);
-        this.saveSilent('sales', data.sales || []);
-        this.saveSilent('expenses', data.expenses || []);
-        this.saveSilent('supply_orders', []);
-        this.saveSilent('debt_transactions', data.debtTransactions || []);
-        this.saveSilent('sync_events', []);
-        if (data.settings) this.saveSilent('settings', data.settings);
-        window.dispatchEvent(new Event('erp_data_changed'));
-        return true;
-      }
-
       // 1. PRODUCTS
-      const localProducts = this.load<Product[]>('products', []);
       if (data.products !== undefined) {
-        if (data.products.length > 0) {
-          const localProdMap = new Map(localProducts.map(p => [p.id, p]));
-          const mergedProducts = data.products.map(cloudP => {
-            const localP = localProdMap.get(cloudP.id);
-            if (!localP) return cloudP;
-            const localTime = new Date(localP.updatedAt || localP.createdAt || 0).getTime();
-            const cloudTime = new Date(cloudP.updatedAt || cloudP.createdAt || 0).getTime();
-            if (localTime >= cloudTime) {
-              if (localTime > cloudTime || localP.stock !== cloudP.stock) {
-                cloudDb.upsertProduct(localP).catch(() => {});
-              }
-              return localP;
-            }
-            return cloudP;
-          });
-          const cloudIds = new Set(data.products.map(p => p.id));
-          const missingInCloud = localProducts.filter(p => !cloudIds.has(p.id));
-          for (const p of missingInCloud) {
-            cloudDb.upsertProduct(p).catch(() => {});
-          }
-          const finalProducts = [...mergedProducts, ...missingInCloud];
-          if (this.saveSilent('products', finalProducts)) {
-            changed = true;
-          }
-        } else if (localProducts.length > 0 && cloudClearedAt) {
-          this.saveSilent('products', []);
+        if (this.saveSilent('products', data.products)) {
           changed = true;
         }
       }
 
       // 2. SALES
-      const localSales = this.load<Sale[]>('sales', []);
       if (data.sales !== undefined) {
-        if (data.sales.length > 0) {
-          const cloudSaleIds = new Set(data.sales.map(s => s.id));
-          const missingSalesInCloud = localSales.filter(s => !cloudSaleIds.has(s.id));
-          for (const s of missingSalesInCloud) {
-            cloudDb.upsertSale(s).catch(() => {});
-          }
-          const mergedSales = [...data.sales, ...missingSalesInCloud];
-          if (this.saveSilent('sales', mergedSales)) {
-            changed = true;
-          }
-        } else if (localSales.length > 0 && cloudClearedAt) {
-          this.saveSilent('sales', []);
+        if (this.saveSilent('sales', data.sales)) {
           changed = true;
         }
       }
 
       // 3. CUSTOMERS
-      const localCustomers = this.load<Customer[]>('customers', []);
       if (data.customers !== undefined) {
-        if (data.customers.length > 0) {
-          const localCustMap = new Map(localCustomers.map(c => [c.id, c]));
-          const mergedCusts = data.customers.map(cloudC => {
-            const localC = localCustMap.get(cloudC.id);
-            if (!localC) return cloudC;
-            const localTime = new Date(localC.updatedAt || localC.createdAt || 0).getTime();
-            const cloudTime = new Date(cloudC.updatedAt || cloudC.createdAt || 0).getTime();
-            if (localTime >= cloudTime) {
-              if (localTime > cloudTime || localC.balance !== cloudC.balance) {
-                cloudDb.upsertCustomer(localC).catch(() => {});
-              }
-              return localC;
-            }
-            return cloudC;
-          });
-          const cloudCustIds = new Set(data.customers.map(c => c.id));
-          const missingCusts = localCustomers.filter(c => !cloudCustIds.has(c.id));
-          for (const c of missingCusts) {
-            cloudDb.upsertCustomer(c).catch(() => {});
-          }
-          const finalCusts = [...mergedCusts, ...missingCusts];
-          if (this.saveSilent('customers', finalCusts)) {
-            changed = true;
-          }
-        } else if (localCustomers.length > 0 && cloudClearedAt) {
-          this.saveSilent('customers', []);
+        if (this.saveSilent('customers', data.customers)) {
           changed = true;
         }
       }
 
       // 4. SUPPLIERS
-      const localSuppliers = this.load<Supplier[]>('suppliers', []);
       if (data.suppliers !== undefined) {
-        if (data.suppliers.length > 0) {
-          const localSupMap = new Map(localSuppliers.map(s => [s.id, s]));
-          const mergedSups = data.suppliers.map(cloudS => {
-            const localS = localSupMap.get(cloudS.id);
-            if (!localS) return cloudS;
-            const localTime = new Date(localS.updatedAt || localS.createdAt || 0).getTime();
-            const cloudTime = new Date(cloudS.updatedAt || cloudS.createdAt || 0).getTime();
-            if (localTime >= cloudTime) {
-              if (localTime > cloudTime || localS.balance !== cloudS.balance) {
-                cloudDb.upsertSupplier(localS).catch(() => {});
-              }
-              return localS;
-            }
-            return cloudS;
-          });
-          const cloudSupIds = new Set(data.suppliers.map(s => s.id));
-          const missingSups = localSuppliers.filter(s => !cloudSupIds.has(s.id));
-          for (const s of missingSups) {
-            cloudDb.upsertSupplier(s).catch(() => {});
-          }
-          const finalSups = [...mergedSups, ...missingSups];
-          if (this.saveSilent('suppliers', finalSups)) {
-            changed = true;
-          }
-        } else if (localSuppliers.length > 0 && cloudClearedAt) {
-          this.saveSilent('suppliers', []);
+        if (this.saveSilent('suppliers', data.suppliers)) {
           changed = true;
         }
       }
 
       // 5. EXPENSES
-      const localExpenses = this.load<Expense[]>('expenses', []);
       if (data.expenses !== undefined) {
-        if (data.expenses.length > 0) {
-          const cloudExpIds = new Set(data.expenses.map(e => e.id));
-          const missingExps = localExpenses.filter(e => !cloudExpIds.has(e.id));
-          for (const e of missingExps) {
-            cloudDb.upsertExpense(e).catch(() => {});
-          }
-          const mergedExps = [...data.expenses, ...missingExps];
-          if (this.saveSilent('expenses', mergedExps)) {
-            changed = true;
-          }
-        } else if (localExpenses.length > 0 && cloudClearedAt) {
-          this.saveSilent('expenses', []);
+        if (this.saveSilent('expenses', data.expenses)) {
           changed = true;
         }
       }
 
       // 6. DEBT TRANSACTIONS
-      const localDebts = this.load<DebtTransaction[]>('debt_transactions', []);
       if (data.debtTransactions !== undefined) {
-        if (data.debtTransactions.length > 0) {
-          const cloudDebtIds = new Set(data.debtTransactions.map(d => d.id));
-          const missingDebts = localDebts.filter(d => !cloudDebtIds.has(d.id));
-          for (const d of missingDebts) {
-            cloudDb.upsertDebtTransaction(d).catch(() => {});
-          }
-          const mergedDebts = [...data.debtTransactions, ...missingDebts];
-          if (this.saveSilent('debt_transactions', mergedDebts)) {
-            changed = true;
-          }
-        } else if (localDebts.length > 0 && cloudClearedAt) {
-          this.saveSilent('debt_transactions', []);
+        if (this.saveSilent('debt_transactions', data.debtTransactions)) {
           changed = true;
         }
       }
