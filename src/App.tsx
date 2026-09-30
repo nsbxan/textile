@@ -176,17 +176,21 @@ export function App() {
       }
     });
 
-    // 2. Har 8 soniyada boshqa qurilmalardagi yangi savdo/tovarlarni tekshirish (Real-time Auto-Sync)
+    // 2. Har 25 soniyada boshqa qurilmalardagi yangi savdo/tovarlarni tekshirish (fondagi Auto-Sync)
     const syncInterval = setInterval(() => {
       AppDatabase.syncFromCloud().then((changed) => {
         if (changed) {
           loadData();
         }
       });
-    }, 8000);
+    }, 25000);
 
-    // 3. Foydalanuvchi ilovaga qaytganida (tab ochilganda yoki telefon qulfdan chiqqanda) darhol sinxronlash
+    // 3. Foydalanuvchi ilovaga qaytganida darhol sinxronlash (kamida 5 soniya oraliq bilan)
+    let lastFocusSync = 0;
     const handleFocusSync = () => {
+      const now = Date.now();
+      if (now - lastFocusSync < 5000) return;
+      lastFocusSync = now;
       AppDatabase.syncFromCloud().then((changed) => {
         if (changed) {
           loadData();

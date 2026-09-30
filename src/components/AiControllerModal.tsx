@@ -41,7 +41,7 @@ export const AiControllerModal: React.FC<AiControllerModalProps> = ({
   const [apiKey, setApiKey] = useState<string>('');
   const [model, setModel] = useState<string>('gemini-2.0-flash');
   const [isConfigured, setIsConfigured] = useState<boolean>(aiAgentService.isConfigured());
-  const [showSettings, setShowSettings] = useState<boolean>(isSuperAdmin && !aiAgentService.isConfigured());
+  const [showSettings, setShowSettings] = useState<boolean>(false);
   const [testingKey, setTestingKey] = useState<boolean>(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -71,7 +71,6 @@ export const AiControllerModal: React.FC<AiControllerModalProps> = ({
     setApiKey(config.apiKey || '');
     setModel(config.model || 'gemini-2.0-flash');
     setIsConfigured(aiAgentService.isConfigured());
-    setShowSettings(isSuperAdmin && !aiAgentService.isConfigured());
   }, [isOpen, isSuperAdmin]);
 
   useEffect(() => {

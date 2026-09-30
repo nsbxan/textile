@@ -8,8 +8,8 @@ import { cloudDb, DEFAULT_SUPABASE_CONFIG } from '../services/supabase';
 const STORAGE_PREFIX = 'savdo_erp_';
 
 export const DEFAULT_AI_CONFIG_DB: AiConfig = {
-  apiKey: 'AQ.Ab8RN6LIZ9gPlf5BBrO-z_tYGy78wtfuV_lFNWFVWcZ6zTecPQ',
-  model: 'gemini-flash-lite-latest',
+  apiKey: '',
+  model: 'gemini-2.0-flash',
   enabled: true,
   autoExecuteActions: true,
 };
@@ -75,6 +75,19 @@ export class AppDatabase {
     }
   }
 
+  private static saveSilent<T>(key: string, value: T): boolean {
+    try {
+      const serialized = JSON.stringify(value);
+      const existing = localStorage.getItem(STORAGE_PREFIX + key);
+      if (existing === serialized) return false;
+      localStorage.setItem(STORAGE_PREFIX + key, serialized);
+      return true;
+    } catch (e) {
+      console.error(`Error in saveSilent for ${key}:`, e);
+      return false;
+    }
+  }
+
   // --- TERMINAL DO'KON ID ---
   static getDeviceStoreId(): string {
     return 'store_1';
@@ -134,19 +147,18 @@ export class AppDatabase {
       // 1. PRODUCTS
       const localProducts = this.load<Product[]>('products', []);
       if (data.products && data.products.length > 0) {
-        // Bulutda mahsulotlar bor - mahalliy bazada bo'lmagan yangilari bo'lsa bulutga qo'shamiz
         const cloudIds = new Set(data.products.map(p => p.id));
         const missingInCloud = localProducts.filter(p => !cloudIds.has(p.id));
         for (const p of missingInCloud) {
-          await cloudDb.upsertProduct(p);
+          cloudDb.upsertProduct(p).catch(() => {});
         }
         const mergedProducts = [...data.products, ...missingInCloud];
-        this.save('products', mergedProducts);
-        changed = true;
+        if (this.saveSilent('products', mergedProducts)) {
+          changed = true;
+        }
       } else if (localProducts.length > 0) {
-        // Bulut bo'sh, ammo bu qurilmada mahsulotlar bor -> avtomatik bulutga yuklash!
         for (const p of localProducts) {
-          await cloudDb.upsertProduct(p);
+          cloudDb.upsertProduct(p).catch(() => {});
         }
       }
 
@@ -156,14 +168,15 @@ export class AppDatabase {
         const cloudSaleIds = new Set(data.sales.map(s => s.id));
         const missingSalesInCloud = localSales.filter(s => !cloudSaleIds.has(s.id));
         for (const s of missingSalesInCloud) {
-          await cloudDb.upsertSale(s);
+          cloudDb.upsertSale(s).catch(() => {});
         }
         const mergedSales = [...data.sales, ...missingSalesInCloud];
-        this.save('sales', mergedSales);
-        changed = true;
+        if (this.saveSilent('sales', mergedSales)) {
+          changed = true;
+        }
       } else if (localSales.length > 0) {
         for (const s of localSales) {
-          await cloudDb.upsertSale(s);
+          cloudDb.upsertSale(s).catch(() => {});
         }
       }
 
@@ -173,14 +186,15 @@ export class AppDatabase {
         const cloudCustIds = new Set(data.customers.map(c => c.id));
         const missingCusts = localCustomers.filter(c => !cloudCustIds.has(c.id));
         for (const c of missingCusts) {
-          await cloudDb.upsertCustomer(c);
+          cloudDb.upsertCustomer(c).catch(() => {});
         }
         const mergedCusts = [...data.customers, ...missingCusts];
-        this.save('customers', mergedCusts);
-        changed = true;
+        if (this.saveSilent('customers', mergedCusts)) {
+          changed = true;
+        }
       } else if (localCustomers.length > 0) {
         for (const c of localCustomers) {
-          await cloudDb.upsertCustomer(c);
+          cloudDb.upsertCustomer(c).catch(() => {});
         }
       }
 
@@ -190,14 +204,15 @@ export class AppDatabase {
         const cloudSupIds = new Set(data.suppliers.map(s => s.id));
         const missingSups = localSuppliers.filter(s => !cloudSupIds.has(s.id));
         for (const s of missingSups) {
-          await cloudDb.upsertSupplier(s);
+          cloudDb.upsertSupplier(s).catch(() => {});
         }
         const mergedSups = [...data.suppliers, ...missingSups];
-        this.save('suppliers', mergedSups);
-        changed = true;
+        if (this.saveSilent('suppliers', mergedSups)) {
+          changed = true;
+        }
       } else if (localSuppliers.length > 0) {
         for (const s of localSuppliers) {
-          await cloudDb.upsertSupplier(s);
+          cloudDb.upsertSupplier(s).catch(() => {});
         }
       }
 
@@ -207,14 +222,15 @@ export class AppDatabase {
         const cloudExpIds = new Set(data.expenses.map(e => e.id));
         const missingExps = localExpenses.filter(e => !cloudExpIds.has(e.id));
         for (const e of missingExps) {
-          await cloudDb.upsertExpense(e);
+          cloudDb.upsertExpense(e).catch(() => {});
         }
         const mergedExps = [...data.expenses, ...missingExps];
-        this.save('expenses', mergedExps);
-        changed = true;
+        if (this.saveSilent('expenses', mergedExps)) {
+          changed = true;
+        }
       } else if (localExpenses.length > 0) {
         for (const e of localExpenses) {
-          await cloudDb.upsertExpense(e);
+          cloudDb.upsertExpense(e).catch(() => {});
         }
       }
 
@@ -224,21 +240,23 @@ export class AppDatabase {
         const cloudDebtIds = new Set(data.debtTransactions.map(d => d.id));
         const missingDebts = localDebts.filter(d => !cloudDebtIds.has(d.id));
         for (const d of missingDebts) {
-          await cloudDb.upsertDebtTransaction(d);
+          cloudDb.upsertDebtTransaction(d).catch(() => {});
         }
         const mergedDebts = [...data.debtTransactions, ...missingDebts];
-        this.save('debt_transactions', mergedDebts);
-        changed = true;
+        if (this.saveSilent('debt_transactions', mergedDebts)) {
+          changed = true;
+        }
       } else if (localDebts.length > 0) {
         for (const d of localDebts) {
-          await cloudDb.upsertDebtTransaction(d);
+          cloudDb.upsertDebtTransaction(d).catch(() => {});
         }
       }
 
       // 7. SETTINGS
       if (data.settings) {
-        this.save('settings', data.settings);
-        changed = true;
+        if (this.saveSilent('settings', data.settings)) {
+          changed = true;
+        }
       }
 
       if (changed) {

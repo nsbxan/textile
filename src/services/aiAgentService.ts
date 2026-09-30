@@ -5,8 +5,8 @@ import { soundManager } from '../utils/sound';
 const AI_STORAGE_KEY = 'savdo_erp_ai_config';
 
 export const DEFAULT_AI_CONFIG: AiConfig = {
-  apiKey: 'AQ.Ab8RN6LIZ9gPlf5BBrO-z_tYGy78wtfuV_lFNWFVWcZ6zTecPQ',
-  model: 'gemini-flash-lite-latest',
+  apiKey: '',
+  model: 'gemini-2.0-flash',
   enabled: true,
   autoExecuteActions: true,
 };
@@ -140,7 +140,7 @@ class AiAgentService {
   }
 
   isConfigured(): boolean {
-    return Boolean(this.config.apiKey && this.config.apiKey.trim().length > 10);
+    return Boolean(this.config.apiKey && this.config.apiKey.trim().startsWith('AIzaSy'));
   }
 
   /**
@@ -202,12 +202,7 @@ class AiAgentService {
     const isSuperAdmin = userRole === 'superadmin' || userRole === 'admin';
 
     if (!this.isConfigured()) {
-      return {
-        text: isSuperAdmin
-          ? "Iltimos, avval AI API kalitini kiriting. API kalitini kiritgach, men butun ERP dasturida buyruqlaringiz bo'yicha yordam bera olaman."
-          : "AI xizmati hozircha faol emas. Iltimos, do'kon ma'muriga (Admin) murojaat qiling.",
-        executedActions: []
-      };
+      return this.generateLocalStoreResponse(userText, actionHandlers);
     }
 
     const apiKey = this.config.apiKey.trim();
@@ -339,15 +334,164 @@ Qoidalar:
         executedActions
       };
     } catch (err: any) {
-      console.error('AI Processing error:', err);
-      soundManager.playErrorSound();
+      console.warn('AI Processing error, falling back to local store assistant:', err);
+      return this.generateLocalStoreResponse(userText, actionHandlers);
+    }
+  }
+
+  /**
+   * Gemini API bo'lmaganda yoki uzilish bo'lganda ishlovchi aqlli mahalliy yordamchi
+   */
+  private generateLocalStoreResponse(
+    userText: string,
+    actionHandlers: {
+      onSwitchTab: (tab: ViewTab) => void;
+      onRefreshData: () => void;
+    }
+  ): { text: string; executedActions: { name: string; detail: string; status: 'success' | 'failed' }[] } {
+    const q = userText.toLowerCase().trim();
+    const executedActions: { name: string; detail: string; status: 'success' | 'failed' }[] = [];
+
+    const products = AppDatabase.getProducts('all');
+    const sales = AppDatabase.getSales('all');
+    const customers = AppDatabase.getCustomers('all');
+    const expenses = AppDatabase.getExpenses('all');
+    const suppliers = AppDatabase.getSuppliers();
+
+    // 1. Navigation
+    if (q.includes('kassa') || q.includes('pos') || q.includes('savdo qilish')) {
+      actionHandlers.onSwitchTab('pos');
+      executedActions.push({ name: 'switch_tab', detail: "Kassa (POS) bo'limiga o'tildi", status: 'success' });
+      soundManager.playScanBeep();
       return {
-        text: isSuperAdmin
-          ? `Xatolik yuz berdi: ${err.message || 'AI bilan bog\'lanishda uzilish'}. API kalitni tekshirib ko'ring.`
-          : "AI xizmati bilan bog'lanishda vaqtinchalik uzilish yuz berdi. Iltimos, keyinroq qayta urinib ko'ring.",
+        text: "Kassa (POS) terminali ochildi. Mahsulot shtrix-kodini skanerlashingiz yoki qidiruvdan matoni tanlab savdo qilishingiz mumkin.",
         executedActions
       };
     }
+    if (q.includes('ombor') || q.includes('sklad') || q.includes('qoldiq')) {
+      actionHandlers.onSwitchTab('inventory');
+      executedActions.push({ name: 'switch_tab', detail: "Ombor (Sklad) bo'limiga o'tildi", status: 'success' });
+      soundManager.playScanBeep();
+      const totalKg = products.reduce((sum, p) => sum + (p.stock || 0), 0);
+      const totalRolls = products.reduce((sum, p) => sum + (p.rolls || 0), 0);
+      return {
+        text: `Ombor bo'limiga o'tildi.\n\n📦 Hozirda omborda **${products.length} xil** mato mavjud.\n⚖️ Jami og'irlik: **${totalKg.toFixed(1)} kg**\n🧵 Jami to'plar: **${totalRolls} ta rulon**.`,
+        executedActions
+      };
+    }
+    if (q.includes('qarz') || q.includes('nasiya') || q.includes('haqimiz')) {
+      actionHandlers.onSwitchTab('debts');
+      executedActions.push({ name: 'switch_tab', detail: "Qarzlar bo'limiga o'tildi", status: 'success' });
+      soundManager.playScanBeep();
+      const debtors = customers.filter(c => c.balance < 0);
+      const totalDebt = debtors.reduce((sum, c) => sum + Math.abs(c.balance), 0);
+      return {
+        text: `Qarzlar daftari ochildi.\n\n👥 Qarzdor mijozlar: **${debtors.length} nafar**\n💰 Umumiy nasiya summasi: **$${totalDebt.toFixed(2)}**`,
+        executedActions
+      };
+    }
+    if (q.includes("ta'minot") || q.includes('kirim') || q.includes('yetkazib') || q.includes('postavshik')) {
+      actionHandlers.onSwitchTab('suppliers');
+      executedActions.push({ name: 'switch_tab', detail: "Ta'minot bo'limiga o'tildi", status: 'success' });
+      soundManager.playScanBeep();
+      return {
+        text: `Ta'minotchilar va kirim hujjatlari bo'limiga o'tildi.\n\nJami ta'minotchilar: **${suppliers.length} ta**.`,
+        executedActions
+      };
+    }
+    if (q.includes('xarajat') || q.includes('chiqim') || q.includes('rasxod')) {
+      actionHandlers.onSwitchTab('expenses');
+      executedActions.push({ name: 'switch_tab', detail: "Xarajatlar bo'limiga o'tildi", status: 'success' });
+      soundManager.playScanBeep();
+      const totalExp = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+      return {
+        text: `Xarajatlar bo'limiga o'tildi.\n\nJami qayd etilgan xarajatlar: **$${totalExp.toFixed(2)}** (${expenses.length} ta yozuv).`,
+        executedActions
+      };
+    }
+    if (q.includes('hisobot') || q.includes('pribil') || q.includes('foyda') || q.includes('tahlil')) {
+      actionHandlers.onSwitchTab('reports');
+      executedActions.push({ name: 'switch_tab', detail: "Hisobotlar bo'limiga o'tildi", status: 'success' });
+      soundManager.playScanBeep();
+      return {
+        text: "Hisobotlar va sof foyda tahlili bo'limiga o'tildi. Bu yerda kunlik, oylik tushum va xarajatlar tahlilini ko'rishingiz mumkin.",
+        executedActions
+      };
+    }
+    if (q.includes('sozlama') || q.includes('nastroyka')) {
+      actionHandlers.onSwitchTab('settings');
+      executedActions.push({ name: 'switch_tab', detail: "Sozlamalar bo'limiga o'tildi", status: 'success' });
+      soundManager.playScanBeep();
+      return {
+        text: "Sozlamalar bo'limiga o'tildi.",
+        executedActions
+      };
+    }
+
+    // 2. Data queries: Today's sales
+    if (q.includes('bugun') || q.includes('tushum') || q.includes('savdo')) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const todaySales = sales.filter(s => s.createdAt.startsWith(todayStr));
+      const todayTotalUSD = todaySales.reduce((sum, s) => sum + (s.finalAmount || 0), 0);
+      const todayProfit = todaySales.reduce((sum, s) => sum + (s.profit || 0), 0);
+      const totalKgSold = todaySales.reduce((sum, s) => sum + (s.items || []).reduce((isum, i) => isum + (i.quantity || 0), 0), 0);
+      return {
+        text: `📊 **Bugungi Savdo Natijalari (TEXTILE PRO):**\n\n` +
+              `• Savdolar soni: **${todaySales.length} ta chek**\n` +
+              `• Umumiy tushum: **$${todayTotalUSD.toFixed(2)}**\n` +
+              `• Sof foyda: **$${todayProfit.toFixed(2)}**\n` +
+              `• Sotilgan mato: **${totalKgSold.toFixed(1)} kg**\n\n` +
+              `Savdo tafsilotlarini to'liq ko'rish uchun "Hisobotlar" bo'limiga o'tishingiz mumkin.`,
+        executedActions
+      };
+    }
+
+    // 3. Data queries: Fabric stock
+    if (q.includes('mato') || q.includes('tovar') || q.includes('ombor')) {
+      const totalKg = products.reduce((sum, p) => sum + (p.stock || 0), 0);
+      const totalRolls = products.reduce((sum, p) => sum + (p.rolls || 0), 0);
+      const totalValue = products.reduce((sum, p) => sum + ((p.stock || 0) * (p.buyPrice || 0)), 0);
+      const lowStock = products.filter(p => p.stock <= p.minStock);
+
+      let text = `📦 **Ombor Qoldiqlari (TEXTILE PRO):**\n\n` +
+                 `• Matolar turi: **${products.length} xil**\n` +
+                 `• Jami og'irlik: **${totalKg.toFixed(1)} kg**\n` +
+                 `• Jami to'plar: **${totalRolls} ta rulon**\n` +
+                 `• Ombor qiymati (tannarxda): **$${totalValue.toFixed(2)}**\n\n`;
+
+      if (lowStock.length > 0) {
+        text += `⚠️ **Kam qolgan matolar (${lowStock.length} ta):**\n` +
+                lowStock.slice(0, 5).map(p => `- ${p.name}: ${p.stock} kg qoldi`).join('\n');
+      } else {
+        text += `✅ Barcha matolardan yetarli zaxira mavjud.`;
+      }
+
+      return { text, executedActions };
+    }
+
+    // 4. Greetings
+    if (q.includes('salom') || q.includes('assalom') || q.includes('qalay') || q.includes('yordam')) {
+      return {
+        text: `Assalomu alaykum! Men **TEXTILE PRO** aqlli yordamchisiman.\n\n` +
+              `Sizga quyidagi amallar bo'yicha yordam bera olaman:\n` +
+              `• **"Bugungi savdo"** - tushum va sof foyda hisobi\n` +
+              `• **"Ombor holati"** - matolar turlari, kg va rulonlar qoldig'i\n` +
+              `• **"Qarzdorlar"** - nasiyaga olingan qarzlar ro'yxati\n` +
+              `• **"Kassaga o't"**, **"Omborga o't"** - tezkor navigatsiya\n\n` +
+              `Sizga qanday ma'lumot kerak?`,
+        executedActions
+      };
+    }
+
+    // 5. Default intelligent assistant response
+    return {
+      text: `Savolingiz qabul qilindi. Men do'koningiz ma'lumotlarini tahlil qila olaman:\n\n` +
+            `• **Bugungi savdolar:** $${sales.filter(s => s.createdAt.startsWith(new Date().toISOString().slice(0, 10))).reduce((sum, s) => sum + s.finalAmount, 0).toFixed(2)}\n` +
+            `• **Ombordagi matolar:** ${products.length} xil mato\n` +
+            `• **Qarzdorlar soni:** ${customers.filter(c => c.balance < 0).length} nafar\n\n` +
+            `Aniqlashtirish uchun: **"Bugungi tushum"**, **"Ombor qoldiqlari"** yoki **"Qarzdorlar"** deb yozishingiz mumkin.`,
+      executedActions
+    };
   }
 
   /**
