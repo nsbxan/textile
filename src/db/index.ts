@@ -144,44 +144,137 @@ export class AppDatabase {
 
       let changed = false;
 
+      // 0. Baza tozalash (Wipe) sinxronizatsiyasi
+      const localCleared = localStorage.getItem(STORAGE_PREFIX + 'last_cleared_at') || '';
+      const cloudCleared = data.settings?.lastClearedAt || '';
+
+      if (cloudCleared && (!localCleared || cloudCleared > localCleared)) {
+        localStorage.setItem(STORAGE_PREFIX + 'last_cleared_at', cloudCleared);
+      }
+      const effectiveCleared = (cloudCleared && cloudCleared > localCleared) ? cloudCleared : localCleared;
+
       // 1. PRODUCTS
       if (data.products !== undefined) {
-        if (this.saveSilent('products', data.products)) {
+        let prodsToSave = data.products;
+        const localProds = this.load<Product[]>('products', []);
+        const cloudIds = new Set(data.products.map(p => p.id));
+        const offlineCreated = localProds.filter(p => 
+          !cloudIds.has(p.id) && 
+          (!effectiveCleared || (p.createdAt && p.createdAt > effectiveCleared))
+        );
+        if (offlineCreated.length > 0) {
+          for (const op of offlineCreated) {
+            cloudDb.upsertProduct(op);
+          }
+          prodsToSave = [...offlineCreated, ...data.products];
+        }
+
+        if (this.saveSilent('products', prodsToSave)) {
           changed = true;
         }
       }
 
       // 2. SALES
       if (data.sales !== undefined) {
-        if (this.saveSilent('sales', data.sales)) {
+        let salesToSave = data.sales;
+        const localSales = this.load<Sale[]>('sales', []);
+        const cloudIds = new Set(data.sales.map(s => s.id));
+        const offlineCreated = localSales.filter(s => 
+          !cloudIds.has(s.id) && 
+          (!effectiveCleared || (s.createdAt && s.createdAt > effectiveCleared))
+        );
+        if (offlineCreated.length > 0) {
+          for (const os of offlineCreated) {
+            cloudDb.upsertSale(os);
+          }
+          salesToSave = [...offlineCreated, ...data.sales];
+        }
+
+        if (this.saveSilent('sales', salesToSave)) {
           changed = true;
         }
       }
 
       // 3. CUSTOMERS
       if (data.customers !== undefined) {
-        if (this.saveSilent('customers', data.customers)) {
+        let custsToSave = data.customers;
+        const localCusts = this.load<Customer[]>('customers', []);
+        const cloudIds = new Set(data.customers.map(c => c.id));
+        const offlineCreated = localCusts.filter(c => 
+          !cloudIds.has(c.id) && 
+          (!effectiveCleared || (c.createdAt && c.createdAt > effectiveCleared))
+        );
+        if (offlineCreated.length > 0) {
+          for (const oc of offlineCreated) {
+            cloudDb.upsertCustomer(oc);
+          }
+          custsToSave = [...offlineCreated, ...data.customers];
+        }
+
+        if (this.saveSilent('customers', custsToSave)) {
           changed = true;
         }
       }
 
       // 4. SUPPLIERS
       if (data.suppliers !== undefined) {
-        if (this.saveSilent('suppliers', data.suppliers)) {
+        let supsToSave = data.suppliers;
+        const localSups = this.load<Supplier[]>('suppliers', []);
+        const cloudIds = new Set(data.suppliers.map(s => s.id));
+        const offlineCreated = localSups.filter(s => 
+          !cloudIds.has(s.id) && 
+          (!effectiveCleared || (s.createdAt && s.createdAt > effectiveCleared))
+        );
+        if (offlineCreated.length > 0) {
+          for (const os of offlineCreated) {
+            cloudDb.upsertSupplier(os);
+          }
+          supsToSave = [...offlineCreated, ...data.suppliers];
+        }
+
+        if (this.saveSilent('suppliers', supsToSave)) {
           changed = true;
         }
       }
 
       // 5. EXPENSES
       if (data.expenses !== undefined) {
-        if (this.saveSilent('expenses', data.expenses)) {
+        let expsToSave = data.expenses;
+        const localExps = this.load<Expense[]>('expenses', []);
+        const cloudIds = new Set(data.expenses.map(e => e.id));
+        const offlineCreated = localExps.filter(e => 
+          !cloudIds.has(e.id) && 
+          (!effectiveCleared || (e.createdAt && e.createdAt > effectiveCleared))
+        );
+        if (offlineCreated.length > 0) {
+          for (const oe of offlineCreated) {
+            cloudDb.upsertExpense(oe);
+          }
+          expsToSave = [...offlineCreated, ...data.expenses];
+        }
+
+        if (this.saveSilent('expenses', expsToSave)) {
           changed = true;
         }
       }
 
       // 6. DEBT TRANSACTIONS
       if (data.debtTransactions !== undefined) {
-        if (this.saveSilent('debt_transactions', data.debtTransactions)) {
+        let debtsToSave = data.debtTransactions;
+        const localDebts = this.load<DebtTransaction[]>('debt_transactions', []);
+        const cloudIds = new Set(data.debtTransactions.map(d => d.id));
+        const offlineCreated = localDebts.filter(d => 
+          !cloudIds.has(d.id) && 
+          (!effectiveCleared || (d.createdAt && d.createdAt > effectiveCleared))
+        );
+        if (offlineCreated.length > 0) {
+          for (const od of offlineCreated) {
+            cloudDb.upsertDebtTransaction(od);
+          }
+          debtsToSave = [...offlineCreated, ...data.debtTransactions];
+        }
+
+        if (this.saveSilent('debt_transactions', debtsToSave)) {
           changed = true;
         }
       }
@@ -508,6 +601,13 @@ export class AppDatabase {
     }
 
     this.save('products', allProducts);
+    cloudDb.upsertProduct(sourceProd);
+    if (targetProd) {
+      cloudDb.upsertProduct(targetProd);
+    } else {
+      const cloned = allProducts[0];
+      if (cloned) cloudDb.upsertProduct(cloned);
+    }
 
     serverSyncService.recordEvent({
       action: 'STOCK_TRANSFERRED',
@@ -559,6 +659,7 @@ export class AppDatabase {
       if (prod) {
         prod.stock = Math.max(0, prod.stock - item.quantity);
         prod.updatedAt = now;
+        cloudDb.upsertProduct(prod);
       }
     }
     this.save('products', products);
@@ -915,6 +1016,7 @@ export class AppDatabase {
         prod.buyPrice = Number(item.buyPrice);
         if (item.sellPrice) prod.sellPrice = Number(item.sellPrice);
         prod.updatedAt = now;
+        cloudDb.upsertProduct(prod);
       } else {
         // Yangi mahsulot bo'lsa avtomatik yaratish
         const newP: Product = {
@@ -932,6 +1034,7 @@ export class AppDatabase {
           updatedAt: now,
         };
         products.push(newP);
+        cloudDb.upsertProduct(newP);
       }
     }
     this.save('products', products);

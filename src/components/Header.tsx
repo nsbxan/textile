@@ -13,7 +13,9 @@ import {
   LogOut,
   Edit3,
   Check,
-  X
+  X,
+  Cloud,
+  CloudOff
 } from 'lucide-react';
 import { StoreSettings, Product, UserRole, StoreFilterId, AppUserSession } from '../types';
 import { formatMoney } from '../utils/formatters';
@@ -41,6 +43,9 @@ interface HeaderProps {
   onOpenAiController?: () => void;
   currentUser?: AppUserSession | null;
   onLogout?: () => void;
+  syncStatus?: 'idle' | 'syncing' | 'synced' | 'error';
+  lastSyncTime?: string;
+  onManualSync?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -55,6 +60,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAiController,
   currentUser,
   onLogout,
+  syncStatus = 'synced',
+  lastSyncTime = 'Hozirgina',
+  onManualSync,
 }) => {
   const [hoursMin, setHoursMin] = useState<string>('00:00');
   const [dateStr, setDateStr] = useState<string>('30 sentyabr');
@@ -300,6 +308,41 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
+        {/* BULUTLI BAZA BILAN SINXRONIZATSIYA (Real-time Cloud Sync) */}
+        <button
+          onClick={() => {
+            soundManager.playHapticClick();
+            if (onManualSync) onManualSync();
+          }}
+          disabled={syncStatus === 'syncing'}
+          className={`h-11 px-3.5 rounded-2xl border oxista-btn text-xs font-bold shadow-sm flex items-center justify-center gap-2 transition-all interactive-press ${
+            syncStatus === 'syncing'
+              ? 'bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400'
+              : syncStatus === 'error'
+              ? 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400'
+              : 'glass-card border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500/50'
+          }`}
+          title="Bulut bilan sinxronlash (Bosilsa hozir yangilanadi)"
+        >
+          {syncStatus === 'syncing' ? (
+            <RefreshCw className="w-4 h-4 text-blue-500 animate-spin shrink-0" />
+          ) : syncStatus === 'error' ? (
+            <CloudOff className="w-4 h-4 text-rose-500 shrink-0" />
+          ) : (
+            <div className="relative flex items-center justify-center">
+              <Cloud className="w-4 h-4 text-emerald-500 shrink-0" />
+              <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            </div>
+          )}
+          <div className="hidden xl:flex flex-col items-start leading-tight text-left">
+            <span className="text-[11px] font-black tracking-tight text-slate-800 dark:text-slate-200">
+              {syncStatus === 'syncing' ? "Sinxronlanmoqda..." : syncStatus === 'error' ? "Aloqa yo'q" : "Sinxronlangan"}
+            </span>
+            <span className="text-[9px] font-mono text-slate-400">
+              {lastSyncTime ? `So'nggi: ${lastSyncTime}` : "Bulutda"}
+            </span>
+          </div>
+        </button>
 
         {/* KUNDUZGI / TUNGI THEME TOGGLE (Sun / Moon) */}
         <button

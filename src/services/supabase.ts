@@ -86,6 +86,9 @@ create policy "Allow all for debt_transactions" on debt_transactions for all usi
 
 drop policy if exists "Allow all for settings" on settings;
 create policy "Allow all for settings" on settings for all using (true) with check (true);
+
+-- Realtime hodisalarini faollashtirish (Barcha qurilmalar lahzada yangilanishi uchun)
+alter publication supabase_realtime add table products, sales, customers, suppliers, expenses, debt_transactions, settings;
 `;
 
 class CloudDatabaseService {
@@ -137,6 +140,11 @@ class CloudDatabaseService {
           auth: {
             persistSession: false,
           },
+          realtime: {
+            params: {
+              eventsPerSecond: 10,
+            },
+          },
         });
       } catch (e) {
         console.error('Supabase initialization failed:', e);
@@ -144,6 +152,38 @@ class CloudDatabaseService {
       }
     } else {
       this.client = null;
+    }
+  }
+
+  public subscribeToChanges(onAnyChange: () => void): () => void {
+    if (!this.client || !this.isConfigured()) return () => {};
+
+    try {
+      const channel = this.client
+        .channel('erp-realtime-global')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public' },
+          () => {
+            onAnyChange();
+          }
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('⚡ Supabase Realtime faollashdi: barcha qurilmalar lahzada sinxronlanadi.');
+          }
+        });
+
+      return () => {
+        try {
+          if (this.client) {
+            this.client.removeChannel(channel);
+          }
+        } catch {}
+      };
+    } catch (e) {
+      console.error('Realtime subscription error:', e);
+      return () => {};
     }
   }
 
@@ -198,34 +238,37 @@ class CloudDatabaseService {
         settingsRes
       ] = await Promise.all([
         this.client.from('products').select('data, updated_at'),
-        this.client.from('sales').select('data, updated_at'),
+        this.client.from('sales').select('data, updated_at').order('updated_at', { ascending: false }),
         this.client.from('customers').select('data, updated_at'),
         this.client.from('suppliers').select('data, updated_at'),
-        this.client.from('expenses').select('data, updated_at'),
-        this.client.from('debt_transactions').select('data, updated_at'),
+        this.client.from('expenses').select('data, updated_at').order('updated_at', { ascending: false }),
+        this.client.from('debt_transactions').select('data, updated_at').order('updated_at', { ascending: false }),
         this.client.from('settings').select('data').eq('key', 'store_settings').maybeSingle(),
       ]);
 
       const result: any = {};
-      if (prodsRes.data && prodsRes.data.length > 0) {
+      // Bo'sh jadvallar ham [] sifatida qaytishi kerak, shunda o'chirilgan ma'lumotlar boshqa qurilmalarda ham o'chadi
+      if (!prodsRes.error && Array.isArray(prodsRes.data)) {
         result.products = prodsRes.data.map(r => ({ ...r.data, updatedAt: r.data?.updatedAt || r.updated_at }));
       }
-      if (salesRes.data && salesRes.data.length > 0) {
+      if (!salesRes.error && Array.isArray(salesRes.data)) {
         result.sales = salesRes.data.map(r => ({ ...r.data, updatedAt: r.data?.updatedAt || r.updated_at }));
       }
-      if (custsRes.data && custsRes.data.length > 0) {
+      if (!custsRes.error && Array.isArray(custsRes.data)) {
         result.customers = custsRes.data.map(r => ({ ...r.data, updatedAt: r.data?.updatedAt || r.updated_at }));
       }
-      if (supsRes.data && supsRes.data.length > 0) {
+      if (!supsRes.error && Array.isArray(supsRes.data)) {
         result.suppliers = supsRes.data.map(r => ({ ...r.data, updatedAt: r.data?.updatedAt || r.updated_at }));
       }
-      if (expsRes.data && expsRes.data.length > 0) {
+      if (!expsRes.error && Array.isArray(expsRes.data)) {
         result.expenses = expsRes.data.map(r => ({ ...r.data, updatedAt: r.data?.updatedAt || r.updated_at }));
       }
-      if (debtsRes.data && debtsRes.data.length > 0) {
+      if (!debtsRes.error && Array.isArray(debtsRes.data)) {
         result.debtTransactions = debtsRes.data.map(r => ({ ...r.data, updatedAt: r.data?.updatedAt || r.updated_at }));
       }
-      if (settingsRes.data && settingsRes.data.data) result.settings = settingsRes.data.data;
+      if (!settingsRes.error && settingsRes.data && settingsRes.data.data) {
+        result.settings = settingsRes.data.data;
+      }
 
       return result;
     } catch (e) {

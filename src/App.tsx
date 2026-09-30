@@ -15,6 +15,7 @@ import { AiControllerModal } from './components/AiControllerModal';
 import { LoginScreen } from './components/LoginScreen';
 import { ViewTab, Product, Customer, Supplier, Sale, Expense, StoreSettings, UserRole, StoreFilterId, AppUserSession } from './types';
 import { AppDatabase } from './db';
+import { cloudDb } from './services/supabase';
 import { soundManager } from './utils/sound';
 import { AppLanguage, getSavedLanguage, setSavedLanguage, applyDomTranslations, setupLanguageObserver } from './utils/i18n';
 
@@ -154,6 +155,10 @@ export function App() {
     return () => window.removeEventListener('click', handleGlobalClick, true);
   }, [settings.enableSound]);
 
+  // Cloud Sync State
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('synced');
+  const [lastSyncTime, setLastSyncTime] = useState<string>('Hozirgina');
+
   // Load all data from storage
   const loadData = useCallback(() => {
     const curDevice = AppDatabase.getDeviceStoreId();
@@ -166,36 +171,45 @@ export function App() {
     setSettings(AppDatabase.getSettings());
   }, []);
 
+  const triggerCloudSync = useCallback(async (showLoading: boolean = false) => {
+    if (showLoading) setSyncStatus('syncing');
+    try {
+      const changed = await AppDatabase.syncFromCloud();
+      if (changed) {
+        loadData();
+      }
+      setSyncStatus('synced');
+      const now = new Date();
+      setLastSyncTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+    } catch (e) {
+      console.error('Cloud sync error:', e);
+      setSyncStatus('error');
+    }
+  }, [loadData]);
+
   useEffect(() => {
     loadData();
 
     // 1. Dastur ochilganda bulutli bazadan yangilash
-    AppDatabase.syncFromCloud().then((changed) => {
-      if (changed) {
-        loadData();
-      }
+    triggerCloudSync(true);
+
+    // 2. Supabase Realtime obunasi: Boshqa qurilma biror narsa saqlashi bilan darhol bu yerga tushadi
+    const unsubscribeRealtime = cloudDb.subscribeToChanges(() => {
+      triggerCloudSync(false);
     });
 
-    // 2. Har 25 soniyada boshqa qurilmalardagi yangi savdo/tovarlarni tekshirish (fondagi Auto-Sync)
+    // 3. Fondagi avto-tekshirish (har 10 soniyada)
     const syncInterval = setInterval(() => {
-      AppDatabase.syncFromCloud().then((changed) => {
-        if (changed) {
-          loadData();
-        }
-      });
-    }, 25000);
+      triggerCloudSync(false);
+    }, 10000);
 
-    // 3. Foydalanuvchi ilovaga qaytganida darhol sinxronlash (kamida 5 soniya oraliq bilan)
+    // 4. Foydalanuvchi ilovaga qaytganida darhol sinxronlash (kamida 3 soniya oraliq bilan)
     let lastFocusSync = 0;
     const handleFocusSync = () => {
       const now = Date.now();
-      if (now - lastFocusSync < 5000) return;
+      if (now - lastFocusSync < 3000) return;
       lastFocusSync = now;
-      AppDatabase.syncFromCloud().then((changed) => {
-        if (changed) {
-          loadData();
-        }
-      });
+      triggerCloudSync(false);
     };
     window.addEventListener('focus', handleFocusSync);
     const handleVisibility = () => {
@@ -209,13 +223,14 @@ export function App() {
     window.addEventListener('erp_data_changed', handleDataChange);
     window.addEventListener('erp_rate_changed', handleDataChange);
     return () => {
+      unsubscribeRealtime();
       clearInterval(syncInterval);
       window.removeEventListener('focus', handleFocusSync);
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('erp_data_changed', handleDataChange);
       window.removeEventListener('erp_rate_changed', handleDataChange);
     };
-  }, [loadData]);
+  }, [loadData, triggerCloudSync]);
 
   // Global Function Key Shortcuts (F1 - F9)
   useEffect(() => {
@@ -307,6 +322,9 @@ export function App() {
         onOpenAiController={() => setIsAiModalOpen(true)}
         currentUser={userSession}
         onLogout={handleLogout}
+        syncStatus={syncStatus}
+        lastSyncTime={lastSyncTime}
+        onManualSync={() => triggerCloudSync(true)}
       />
 
       {/* Main Layout Area */}
