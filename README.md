@@ -73,3 +73,10 @@ Windows operatsion tizimi uchun mo'ljallangan, do'konlar, marketlar, chakana va 
    npm run dev
    ```
 3. Brauzerda ochiladi: `http://localhost:5173`
+
+---
+
+## Bulutli Baza (Supabase Cloud Database)
+- Barcha tovarlar, sotuvlar va qarzdorliklar Supabase PostgreSQL bazasida saqlanadi.
+- Barcha ulangan qurilmalar (telefon, planshet, kompyuter) real-vaqtda sinxronlashadi.
+
