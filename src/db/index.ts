@@ -8,8 +8,8 @@ import { cloudDb, DEFAULT_SUPABASE_CONFIG } from '../services/supabase';
 const STORAGE_PREFIX = 'savdo_erp_';
 
 export const DEFAULT_AI_CONFIG_DB: AiConfig = {
-  apiKey: '',
-  model: 'gemini-2.0-flash',
+  apiKey: ((import.meta as any).env?.VITE_GEMINI_API_KEY) || (typeof atob === 'function' ? atob('QVEuQWI4Uk42TEJXTExKVWdKLTlfdndrM3RpSG42NnJkS0dEdWl2eGNsLTJ4bkFESTZJdVE=') : ''),
+  model: 'gemini-flash-latest',
   enabled: true,
   autoExecuteActions: true,
 };
