@@ -227,6 +227,7 @@ export interface StoreSettings {
   aiConfig?: AiConfig;
   telegramConfig?: TelegramConfig;
   supabaseConfig?: SupabaseConfig;
+  lastClearedAt?: string;
 }
 
 export type UserRole = 'superadmin' | 'admin' | 'cashier';
