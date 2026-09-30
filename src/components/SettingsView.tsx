@@ -220,11 +220,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     reader.readAsText(file);
   };
 
-  const handleClearAllData = () => {
-    if (window.confirm("DIQQAT! Barcha matolar, savdolar, mijozlar va xarajatlar butunlay o'chiriladi. Haqiqatdan ham bazani tozalab, 0 dan boshlamoqchimisiz?")) {
+  const handleClearAllData = async () => {
+    if (window.confirm("DIQQAT! Barcha matolar, savdolar, mijozlar, qarzlar va xarajatlar ham brauzerdan, ham Supabase bulutli bazasidan butunlay o'chiriladi. Haqiqatdan ham bazani tozalab, 0 dan boshlamoqchimisiz?")) {
       AppDatabase.clearAllData();
+      await cloudDb.clearAllCloudData();
       onRefreshAll();
-      alert("Barcha ma'lumotlar o'chirildi! Tizim toza holatga keltirildi.");
+      alert("Barcha demo ma'lumotlar o'chirildi! Sayt va bulutli baza 0 dan toza holatga keltirildi.");
     }
   };
 

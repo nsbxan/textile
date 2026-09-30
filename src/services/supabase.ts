@@ -408,6 +408,26 @@ class CloudDatabaseService {
       return { success: false, message: `Yuklashda xatolik: ${err?.message || err}` };
     }
   }
+
+  public async clearAllCloudData(): Promise<{ success: boolean; message: string }> {
+    if (!this.client || !this.isConfigured()) {
+      return { success: false, message: "Bulutli baza ulanmagan" };
+    }
+    try {
+      await Promise.all([
+        this.client.from('products').delete().neq('id', '___none___'),
+        this.client.from('sales').delete().neq('id', '___none___'),
+        this.client.from('customers').delete().neq('id', '___none___'),
+        this.client.from('suppliers').delete().neq('id', '___none___'),
+        this.client.from('expenses').delete().neq('id', '___none___'),
+        this.client.from('debt_transactions').delete().neq('id', '___none___'),
+      ]);
+      return { success: true, message: "Bulutli bazadagi barcha ma'lumotlar tozalandi" };
+    } catch (e: any) {
+      console.error('Failed to clear cloud data:', e);
+      return { success: false, message: e?.message || 'Bulutni tozalashda xatolik' };
+    }
+  }
 }
 
 export const cloudDb = new CloudDatabaseService();

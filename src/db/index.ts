@@ -1228,7 +1228,7 @@ export class AppDatabase {
     }
   }
 
-  // Tozalash (Demo ma'lumotlarni qayta tiklash)
+  // Tozalash (Barcha ma'lumotlarni o'chirish va 0 dan boshlash)
   static clearAllData(): void {
     this.save('products', []);
     this.save('customers', []);
@@ -1238,6 +1238,7 @@ export class AppDatabase {
     this.save('supply_orders', []);
     this.save('debt_transactions', []);
     this.save('sync_events', []);
+    cloudDb.clearAllCloudData().catch(() => {});
     window.dispatchEvent(new Event('erp_data_changed'));
   }
 
