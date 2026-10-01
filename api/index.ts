@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { google, sheets_v4 } from 'googleapis';
+import { google } from 'googleapis';
 
 // -------------------------------------------------------------
 // 1. CONSTANTS & CONFIGURATION
@@ -47,12 +47,12 @@ const SHEET_HEADERS: Record<string, string[]> = {
 };
 
 // -------------------------------------------------------------
-// 2. GOOGLE SHEETS CLIENT
+// 2. GOOGLE SHEETS CLIENT CREATION
 // -------------------------------------------------------------
 function getGoogleCredentials() {
-  let clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
-  let privateKey = process.env.GOOGLE_PRIVATE_KEY || '';
-  const sheetId = process.env.GOOGLE_SHEET_ID || '';
+  let clientEmail = (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '').trim().replace(/^["']|["']$/g, '');
+  let privateKey = (process.env.GOOGLE_PRIVATE_KEY || '').trim();
+  let sheetId = (process.env.GOOGLE_SHEET_ID || '').trim().replace(/^["']|["']$/g, '');
 
   const jsonKeyRaw = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (jsonKeyRaw) {
@@ -66,16 +66,22 @@ function getGoogleCredentials() {
       }
       if (parsed.client_email) clientEmail = parsed.client_email;
       if (parsed.private_key) privateKey = parsed.private_key;
+      if (parsed.sheet_id && !sheetId) sheetId = parsed.sheet_id;
     } catch (err) {
       console.error('Failed to parse GOOGLE_SERVICE_ACCOUNT_KEY:', err);
     }
   }
 
   if (privateKey) {
-    privateKey = privateKey.replace(/\\n/g, '\n');
-    if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+    if ((privateKey.startsWith('"') && privateKey.endsWith('"')) || (privateKey.startsWith("'") && privateKey.endsWith("'"))) {
       privateKey = privateKey.slice(1, -1);
     }
+    privateKey = privateKey.replace(/\\n/g, '\n').replace(/\r\n/g, '\n');
+  }
+
+  // Default fallback sheet ID if not configured in environment
+  if (!sheetId) {
+    sheetId = '1bscKFPAB5tkeEgqp7OZyRZvDO6fVqd5SIltkTEtQntg';
   }
 
   return { sheetId, clientEmail, privateKey };
@@ -88,7 +94,7 @@ function getSheetsApi() {
     throw new Error("GOOGLE_SHEET_ID sozlanmagan. Iltimos Vercel Environment Variables bo'limida jadval ID sini kiriting.");
   }
   if (!clientEmail || !privateKey) {
-    throw new Error("Google Service Account hisobi (EMAIL yoki PRIVATE_KEY) sozlanmagan.");
+    throw new Error("Google Service Account hisobi (GOOGLE_SERVICE_ACCOUNT_EMAIL yoki GOOGLE_PRIVATE_KEY) sozlanmagan.");
   }
 
   const auth = new google.auth.GoogleAuth({
@@ -104,7 +110,7 @@ function getSheetsApi() {
 }
 
 // -------------------------------------------------------------
-// 3. CORS & HELPERS
+// 3. CORS & RESPONSE HELPERS
 // -------------------------------------------------------------
 function setCorsHeaders(res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -140,11 +146,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  // Parse body if it arrived as a raw string
+  if (req.body && typeof req.body === 'string') {
+    try {
+      (req as any).body = JSON.parse(req.body);
+    } catch {}
+  }
+
   // Determine path
   const url = new URL(req.url || '/', 'http://localhost');
   let pathname = url.pathname.replace(/\/+$/, '') || '/api';
 
-  // Normalize subpaths (e.g. if Vercel routes /api/health directly to this handler)
+  // 1. Check if rewritten query parameter exists
+  const routeParam = req.query?.__route || req.query?.path || req.query?.route;
+  if (routeParam) {
+    const cleanRoute = Array.isArray(routeParam) ? routeParam.join('/') : String(routeParam);
+    pathname = `/api/${cleanRoute.replace(/^\/+/, '').replace(/\/+$/, '')}`;
+  }
+
+  // 2. Also check Vercel matched headers
+  const matchedPath = (req.headers['x-matched-path'] || req.headers['x-now-route-matches']) as string | undefined;
+  if (pathname === '/api' && typeof matchedPath === 'string' && matchedPath.startsWith('/api/')) {
+    pathname = matchedPath.split('?')[0].replace(/\/+$/, '');
+  }
+
+  // Normalize subpaths (e.g. /health -> /api/health)
   if (!pathname.startsWith('/api')) {
     pathname = `/api${pathname}`;
   }
@@ -248,7 +274,193 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // ---------------------------------------------------------
-    // ROUTE: GET /api/backup/import (PULL ALL DATA)
+    // ROUTE: GET /api/sheets/stats
+    // ---------------------------------------------------------
+    if (pathname === '/api/sheets/stats' || pathname === '/sheets/stats') {
+      const { sheets, sheetId } = getSheetsApi();
+      const fetchCount = async (name: string): Promise<number> => {
+        try {
+          const res = await sheets.spreadsheets.values.get({
+            spreadsheetId: sheetId,
+            range: `${name}!A2:A`,
+          });
+          return (res.data.values || []).filter(r => r && r[0]).length;
+        } catch {
+          return 0;
+        }
+      };
+
+      const [productsCount, salesCount, customersCount, expensesCount, suppliersCount] = await Promise.all([
+        fetchCount(SHEET_NAMES.PRODUCTS),
+        fetchCount(SHEET_NAMES.SALES),
+        fetchCount(SHEET_NAMES.CUSTOMERS),
+        fetchCount(SHEET_NAMES.EXPENSES),
+        fetchCount(SHEET_NAMES.SUPPLIERS),
+      ]);
+
+      return sendJson(res, 200, {
+        success: true,
+        stats: {
+          productsCount,
+          salesCount,
+          customersCount,
+          expensesCount,
+          suppliersCount,
+        },
+      });
+    }
+
+    // ---------------------------------------------------------
+    // ROUTE: POST /api/backup/export (PUSH ALL LOCAL DATA TO SHEETS)
+    // ---------------------------------------------------------
+    if (pathname === '/api/backup/export' || pathname === '/backup/export') {
+      const { sheets, sheetId } = getSheetsApi();
+      const { products, sales, customers, suppliers, expenses, debtTransactions } = req.body || {};
+
+      let exportedCounts = {
+        products: 0,
+        sales: 0,
+        customers: 0,
+        suppliers: 0,
+        expenses: 0,
+        debtTransactions: 0,
+      };
+
+      // 1. Export Products
+      if (Array.isArray(products) && products.length > 0) {
+        const rows = products.map((p: any) => [
+          p.id, p.barcode || '', p.batchNumber || '', p.name || '', p.category || '',
+          p.unit || 'kg', p.density || '', p.color || '', p.rolls || 0, p.buyPrice || 0,
+          p.sellPrice || 0, p.wholesalePrice || 0, p.stock || 0, p.minStock || 0,
+          p.storeId || '', p.createdAt || new Date().toISOString(), p.updatedAt || new Date().toISOString(),
+        ]);
+        await sheets.spreadsheets.values.clear({
+          spreadsheetId: sheetId,
+          range: `${SHEET_NAMES.PRODUCTS}!A2:Q`,
+        });
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: sheetId,
+          range: `${SHEET_NAMES.PRODUCTS}!A2`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: rows },
+        });
+        exportedCounts.products = rows.length;
+      }
+
+      // 2. Export Sales
+      if (Array.isArray(sales) && sales.length > 0) {
+        const rows = sales.map((s: any) => {
+          const itemsList = Array.isArray(s.items)
+            ? s.items.map((i: any) => `${i.name} (${i.quantity} ${i.unit || 'kg'})`).join('; ')
+            : '';
+          return [
+            s.id, s.receiptNumber || '', s.createdAt || new Date().toISOString(), s.storeId || '',
+            s.customerName || '', s.cashierName || '', s.paymentMethod || 'cash',
+            s.subtotal || 0, s.discountAmount || 0, s.finalAmount || 0, s.finalAmountUZS || 0,
+            s.paidCash || 0, s.paidCard || 0, s.paidDebt || 0, s.profit || 0, itemsList,
+          ];
+        });
+        await sheets.spreadsheets.values.clear({
+          spreadsheetId: sheetId,
+          range: `${SHEET_NAMES.SALES}!A2:P`,
+        });
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: sheetId,
+          range: `${SHEET_NAMES.SALES}!A2`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: rows },
+        });
+        exportedCounts.sales = rows.length;
+      }
+
+      // 3. Export Customers
+      if (Array.isArray(customers) && customers.length > 0) {
+        const rows = customers.map((c: any) => [
+          c.id, c.name || '', c.phone || '', c.address || '', c.balance || 0,
+          c.notes || '', c.storeId || '', c.createdAt || new Date().toISOString(),
+          c.updatedAt || new Date().toISOString(),
+        ]);
+        await sheets.spreadsheets.values.clear({
+          spreadsheetId: sheetId,
+          range: `${SHEET_NAMES.CUSTOMERS}!A2:I`,
+        });
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: sheetId,
+          range: `${SHEET_NAMES.CUSTOMERS}!A2`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: rows },
+        });
+        exportedCounts.customers = rows.length;
+      }
+
+      // 4. Export Suppliers
+      if (Array.isArray(suppliers) && suppliers.length > 0) {
+        const rows = suppliers.map((sup: any) => [
+          sup.id, sup.name || '', sup.phone || '', sup.company || '', sup.balance || 0,
+          sup.notes || '', sup.storeId || '', sup.createdAt || new Date().toISOString(),
+        ]);
+        await sheets.spreadsheets.values.clear({
+          spreadsheetId: sheetId,
+          range: `${SHEET_NAMES.SUPPLIERS}!A2:H`,
+        });
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: sheetId,
+          range: `${SHEET_NAMES.SUPPLIERS}!A2`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: rows },
+        });
+        exportedCounts.suppliers = rows.length;
+      }
+
+      // 5. Export Expenses
+      if (Array.isArray(expenses) && expenses.length > 0) {
+        const rows = expenses.map((e: any) => [
+          e.id, e.date || new Date().toISOString().split('T')[0], e.category || '',
+          e.amount || 0, e.paymentMethod || 'cash', e.description || '', e.storeId || '',
+          e.createdAt || new Date().toISOString(),
+        ]);
+        await sheets.spreadsheets.values.clear({
+          spreadsheetId: sheetId,
+          range: `${SHEET_NAMES.EXPENSES}!A2:H`,
+        });
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: sheetId,
+          range: `${SHEET_NAMES.EXPENSES}!A2`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: rows },
+        });
+        exportedCounts.expenses = rows.length;
+      }
+
+      // 6. Export Debt Transactions
+      if (Array.isArray(debtTransactions) && debtTransactions.length > 0) {
+        const rows = debtTransactions.map((d: any) => [
+          d.id, d.createdAt || new Date().toISOString(), d.type || 'customer',
+          d.entityName || '', d.action || 'pay_debt', d.amount || 0,
+          d.paymentMethod || 'cash', d.notes || '', d.storeId || '',
+        ]);
+        await sheets.spreadsheets.values.clear({
+          spreadsheetId: sheetId,
+          range: `${SHEET_NAMES.DEBT_HISTORY}!A2:I`,
+        });
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: sheetId,
+          range: `${SHEET_NAMES.DEBT_HISTORY}!A2`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: rows },
+        });
+        exportedCounts.debtTransactions = rows.length;
+      }
+
+      return sendJson(res, 200, {
+        success: true,
+        message: 'Barcha ma\'lumotlar muvaffaqiyatli Google Sheets bazasiga yuklandi!',
+        counts: exportedCounts,
+      });
+    }
+
+    // ---------------------------------------------------------
+    // ROUTE: GET /api/backup/import (PULL ALL DATA FROM SHEETS)
     // ---------------------------------------------------------
     if (pathname === '/api/backup/import' || pathname === '/backup/import') {
       const { sheets, sheetId } = getSheetsApi();
@@ -434,10 +646,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return sendJson(res, 200, {
       service: 'Savdo ERP - Google Sheets API Server',
       status: 'online',
-      version: '1.1.0',
+      version: '1.2.0',
       routes: [
         'GET /api/health',
         'POST /api/sheets/init',
+        'GET /api/sheets/stats',
+        'POST /api/backup/export',
         'GET /api/backup/import',
         'POST /api/sync/events',
       ],

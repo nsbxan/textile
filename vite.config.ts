@@ -14,24 +14,7 @@ function apiDevPlugin(): Plugin {
 
         const url = new URL(req.url, 'http://localhost');
         const pathname = url.pathname.replace(/\/+$/, '') || '/api';
-
-        // Map pathname to local api file
-        const routeMap: Record<string, string> = {
-          '/api': './api/index.ts',
-          '/api/health': './api/health.ts',
-          '/api/sheets/init': './api/sheets/init.ts',
-          '/api/sheets/stats': './api/sheets/stats.ts',
-          '/api/sync/events': './api/sync/events.ts',
-          '/api/backup/export': './api/backup/export.ts',
-          '/api/backup/import': './api/backup/import.ts',
-          '/api/products': './api/products/index.ts',
-          '/api/sales': './api/sales/index.ts',
-        };
-
-        const targetFile = routeMap[pathname];
-        if (!targetFile) {
-          return next();
-        }
+        const targetFile = './api/index.ts';
 
         try {
           // Parse request body if POST, PUT, or PATCH
