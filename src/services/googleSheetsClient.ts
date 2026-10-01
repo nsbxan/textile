@@ -13,7 +13,7 @@ export const DEFAULT_SHEETS_CONFIG: GoogleSheetsClientConfig = {
   enabled: true,
   apiUrl: '', // Bo'sh bo'lsa joriy sayt /api/... ga so'rov yuboradi
   apiKey: '',
-  sheetId: '',
+  sheetId: '1bscKFPAB5tkeEgqp7OZyRZvDO6fVqd5SIltkTEtQntg',
   autoSync: true,
   lastSyncStatus: 'idle',
 };
@@ -59,7 +59,9 @@ class GoogleSheetsClientService {
 
   private getBaseUrl(): string {
     const custom = (this.config.apiUrl || '').trim().replace(/\/+$/, '');
-    if (custom) return custom;
+    if (custom && (custom.startsWith('http://') || custom.startsWith('https://'))) {
+      return custom;
+    }
     // Standart Vercel yoki bitta domenda ishlaganda
     return '';
   }
