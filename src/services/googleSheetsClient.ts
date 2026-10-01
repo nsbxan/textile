@@ -261,6 +261,7 @@ class GoogleSheetsClientService {
       customers: any[];
       expenses: any[];
       suppliers: any[];
+      sales?: any[];
     };
   }> {
     const baseUrl = this.getBaseUrl();

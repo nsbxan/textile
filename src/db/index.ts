@@ -142,61 +142,29 @@ export class AppDatabase {
   }
 
   // Bulutli bazadan barcha ma'lumotlarni tortib olish va sinxronizatsiya (Cloud Sync)
-  static async syncFromCloud(): Promise<boolean> {
-    if (!cloudDb.isConfigured()) return false;
+  // Google Sheets bazasidan barcha ma'lumotlarni tortib olish
+  static async syncFromGoogleSheets(): Promise<boolean> {
     try {
-      const data = await cloudDb.pullAllData();
-      if (!data) return false;
+      const res = await googleSheetsClient.importAllFromSheets();
+      if (!res.success || !res.data) return false;
 
       let changed = false;
+      const { products, customers, expenses, suppliers, sales } = res.data;
 
-      // 1. PRODUCTS
-      if (data.products !== undefined) {
-        if (this.saveSilent('products', data.products)) {
-          changed = true;
-        }
+      if (Array.isArray(products) && products.length > 0) {
+        if (this.saveSilent('products', products)) changed = true;
       }
-
-      // 2. SALES
-      if (data.sales !== undefined) {
-        if (this.saveSilent('sales', data.sales)) {
-          changed = true;
-        }
+      if (Array.isArray(customers) && customers.length > 0) {
+        if (this.saveSilent('customers', customers)) changed = true;
       }
-
-      // 3. CUSTOMERS
-      if (data.customers !== undefined) {
-        if (this.saveSilent('customers', data.customers)) {
-          changed = true;
-        }
+      if (Array.isArray(expenses) && expenses.length > 0) {
+        if (this.saveSilent('expenses', expenses)) changed = true;
       }
-
-      // 4. SUPPLIERS
-      if (data.suppliers !== undefined) {
-        if (this.saveSilent('suppliers', data.suppliers)) {
-          changed = true;
-        }
+      if (Array.isArray(suppliers) && suppliers.length > 0) {
+        if (this.saveSilent('suppliers', suppliers)) changed = true;
       }
-
-      // 5. EXPENSES
-      if (data.expenses !== undefined) {
-        if (this.saveSilent('expenses', data.expenses)) {
-          changed = true;
-        }
-      }
-
-      // 6. DEBT TRANSACTIONS
-      if (data.debtTransactions !== undefined) {
-        if (this.saveSilent('debt_transactions', data.debtTransactions)) {
-          changed = true;
-        }
-      }
-
-      // 7. SETTINGS
-      if (data.settings) {
-        if (this.saveSilent('settings', data.settings)) {
-          changed = true;
-        }
+      if (Array.isArray(sales) && sales.length > 0) {
+        if (this.saveSilent('sales', sales)) changed = true;
       }
 
       if (changed) {
@@ -204,9 +172,45 @@ export class AppDatabase {
       }
       return changed;
     } catch (e) {
-      console.error('Error syncing from cloud:', e);
+      console.error('Error syncing from Google Sheets:', e);
       return false;
     }
+  }
+
+  // Bulutli bazalardan (Supabase & Google Sheets) barcha ma'lumotlarni tortib olish
+  static async syncFromCloud(): Promise<boolean> {
+    let changed = false;
+
+    // 1. Agar Supabase ulangan bo'lsa
+    if (cloudDb.isConfigured()) {
+      try {
+        const data = await cloudDb.pullAllData();
+        if (data) {
+          if (data.products !== undefined && this.saveSilent('products', data.products)) changed = true;
+          if (data.sales !== undefined && this.saveSilent('sales', data.sales)) changed = true;
+          if (data.customers !== undefined && this.saveSilent('customers', data.customers)) changed = true;
+          if (data.suppliers !== undefined && this.saveSilent('suppliers', data.suppliers)) changed = true;
+          if (data.expenses !== undefined && this.saveSilent('expenses', data.expenses)) changed = true;
+          if (data.debtTransactions !== undefined && this.saveSilent('debt_transactions', data.debtTransactions)) changed = true;
+          if (data.settings && this.saveSilent('settings', data.settings)) changed = true;
+        }
+      } catch (e) {
+        console.error('Error syncing from Supabase:', e);
+      }
+    }
+
+    // 2. Google Sheets bazasidan sinxronlash
+    try {
+      const sheetsChanged = await this.syncFromGoogleSheets();
+      if (sheetsChanged) changed = true;
+    } catch (e) {
+      console.error('Error in syncFromGoogleSheets:', e);
+    }
+
+    if (changed) {
+      window.dispatchEvent(new Event('erp_data_changed'));
+    }
+    return changed;
   }
 
   // --- PRODUCTS (Ombor & Trikotaj Matolar) ---

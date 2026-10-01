@@ -74,6 +74,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       createdAt: r[7] || new Date().toISOString(),
     }));
 
+    // 5. Fetch sales
+    const saleRows = await googleSheetsService.getRows(SHEET_NAMES.SALES);
+    const sales = saleRows.filter(r => r && r[0]).map(r => ({
+      id: r[0],
+      receiptNumber: r[1] || '',
+      createdAt: r[2] || new Date().toISOString(),
+      storeId: r[3] || 'store_1',
+      customerName: r[4] || '',
+      cashierName: r[5] || 'Kassir',
+      paymentMethod: (r[6] || 'cash') as any,
+      subtotal: Number(r[7]) || 0,
+      discountAmount: Number(r[8]) || 0,
+      finalAmount: Number(r[9]) || 0,
+      finalAmountUZS: Number(r[10]) || 0,
+      paidCash: Number(r[11]) || 0,
+      paidCard: Number(r[12]) || 0,
+      paidDebt: Number(r[13]) || 0,
+      profit: Number(r[14]) || 0,
+      items: [],
+    }));
+
     return sendJson(res, 200, {
       success: true,
       message: 'Ma\'lumotlar Google Sheets bazasidan muvaffaqiyatli yuklab olindi.',
@@ -82,6 +103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         customers,
         expenses,
         suppliers,
+        sales,
       },
     });
   } catch (err: any) {
