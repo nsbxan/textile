@@ -210,6 +210,17 @@ export interface SupabaseConfig {
   anonKey: string;
 }
 
+export interface GoogleSheetsClientConfig {
+  enabled: boolean;
+  apiUrl: string;
+  apiKey?: string;
+  sheetId?: string;
+  autoSync: boolean;
+  lastSyncedAt?: string;
+  lastSyncStatus?: 'success' | 'error' | 'idle' | 'syncing';
+  lastErrorMessage?: string;
+}
+
 export interface StoreSettings {
   storeName: string;
   address: string;
@@ -224,6 +235,7 @@ export interface StoreSettings {
   currentStoreId?: string; // Bu terminal qaysi do'konga tegishli
   stores?: StoreBranch[];
   serverSync?: ServerSyncConfig;
+  googleSheetsConfig?: GoogleSheetsClientConfig;
   aiConfig?: AiConfig;
   telegramConfig?: TelegramConfig;
   supabaseConfig?: SupabaseConfig;

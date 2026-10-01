@@ -4,6 +4,7 @@ import { serverSyncService, DEFAULT_SERVER_SYNC_CONFIG } from '../services/serve
 import { telegramService } from '../services/telegramService';
 import { ParsedFabricItem } from '../utils/fabricDocumentParser';
 import { cloudDb, DEFAULT_SUPABASE_CONFIG } from '../services/supabase';
+import { googleSheetsClient, DEFAULT_SHEETS_CONFIG } from '../services/googleSheetsClient';
 
 const STORAGE_PREFIX = 'savdo_erp_v2_';
 
@@ -42,6 +43,7 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   currentStoreId: 'store_1',
   stores: DEFAULT_STORES,
   serverSync: DEFAULT_SERVER_SYNC_CONFIG,
+  googleSheetsConfig: DEFAULT_SHEETS_CONFIG,
   aiConfig: DEFAULT_AI_CONFIG_DB,
   supabaseConfig: DEFAULT_SUPABASE_CONFIG,
 };
@@ -113,6 +115,7 @@ export class AppDatabase {
        currentStoreId: 'store_1',
        stores: DEFAULT_STORES,
        serverSync: s.serverSync ? { ...DEFAULT_SERVER_SYNC_CONFIG, ...s.serverSync } : DEFAULT_SERVER_SYNC_CONFIG,
+       googleSheetsConfig: s.googleSheetsConfig ? { ...DEFAULT_SHEETS_CONFIG, ...s.googleSheetsConfig } : DEFAULT_SHEETS_CONFIG,
        aiConfig: s.aiConfig?.apiKey ? s.aiConfig : DEFAULT_AI_CONFIG_DB,
        supabaseConfig: s.supabaseConfig ? { ...DEFAULT_SUPABASE_CONFIG, ...s.supabaseConfig } : DEFAULT_SUPABASE_CONFIG,
      };
@@ -121,6 +124,9 @@ export class AppDatabase {
 
   static saveSettings(settings: StoreSettings): void {
     this.save('settings', settings);
+    if (settings.googleSheetsConfig) {
+      googleSheetsClient.saveConfig(settings.googleSheetsConfig);
+    }
     if (settings.supabaseConfig) {
       cloudDb.saveConfig(settings.supabaseConfig);
     }

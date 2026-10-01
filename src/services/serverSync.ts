@@ -203,15 +203,20 @@ class ServerSyncManager {
     }
 
     const currentConfig = config || this.getCurrentConfig();
-    const serverUrl = currentConfig.serverUrl?.trim();
+    let serverUrl = currentConfig.serverUrl?.trim();
 
     if (!serverUrl) {
-      return {
-        success: false,
-        sentCount: 0,
-        pendingCount: this.getPendingCount(),
-        error: 'Server manzili hali kiritilmagan. Barcha o\'zgarishlar mahalliy xotirada xavfsiz saqlanmoqda.',
-      };
+      // Agar server URL ko'rsatilmagan bo'lsa, joriy host (Vercel / Localhost) /api orqali Google Sheets backendiga ulanish
+      if (typeof window !== 'undefined' && window.location?.origin) {
+        serverUrl = window.location.origin;
+      } else {
+        return {
+          success: false,
+          sentCount: 0,
+          pendingCount: this.getPendingCount(),
+          error: 'Server manzili hali kiritilmagan. Barcha o\'zgarishlar mahalliy xotirada xavfsiz saqlanmoqda.',
+        };
+      }
     }
 
     const pending = this.getPendingEvents();

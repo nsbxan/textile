@@ -22,13 +22,20 @@ import {
   Globe,
   Database,
   Cloud,
-  Copy
+  Copy,
+  FileSpreadsheet,
+  Server,
+  RefreshCw,
+  UploadCloud,
+  DownloadCloud,
+  FileText
 } from 'lucide-react';
-import { StoreSettings, AiConfig, TelegramConfig, SupabaseConfig } from '../types';
+import { StoreSettings, AiConfig, TelegramConfig, SupabaseConfig, GoogleSheetsClientConfig } from '../types';
 import { AppDatabase, DEFAULT_STORES } from '../db';
 import { aiAgentService, DEFAULT_AI_CONFIG } from '../services/aiAgentService';
 import { telegramService } from '../services/telegramService';
 import { cloudDb, SUPABASE_SQL_SETUP } from '../services/supabase';
+import { googleSheetsClient } from '../services/googleSheetsClient';
 import { AppLanguage } from '../utils/i18n';
 import { soundManager } from '../utils/sound';
 
@@ -79,11 +86,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [showSql, setShowSql] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
 
+  // Google Sheets & Backend API state
+  const [sheetsConfig, setSheetsConfig] = useState<GoogleSheetsClientConfig>(
+    settings.googleSheetsConfig || googleSheetsClient.getConfig()
+  );
+  const [sheetsTesting, setSheetsTesting] = useState(false);
+  const [sheetsTestResult, setSheetsTestResult] = useState<{ success: boolean; message: string; latencyMs?: number; details?: any } | null>(null);
+  const [sheetsInitializing, setSheetsInitializing] = useState(false);
+  const [sheetsInitResult, setSheetsInitResult] = useState<{ success: boolean; message: string; details?: any } | null>(null);
+  const [sheetsExporting, setSheetsExporting] = useState(false);
+  const [sheetsExportResult, setSheetsExportResult] = useState<{ success: boolean; message: string; counts?: any } | null>(null);
+  const [sheetsImporting, setSheetsImporting] = useState(false);
+  const [sheetsImportResult, setSheetsImportResult] = useState<{ success: boolean; message: string; data?: any } | null>(null);
+  const [showSheetsGuide, setShowSheetsGuide] = useState(false);
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     aiAgentService.saveConfig(aiConfig);
     telegramService.saveConfig(telegramConfig);
     cloudDb.saveConfig(supabaseConfig);
+    googleSheetsClient.saveConfig(sheetsConfig);
     const updatedSettings: StoreSettings = {
       ...formData,
       currentStoreId: 'store_1',
@@ -91,11 +113,105 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       aiConfig,
       telegramConfig,
       supabaseConfig,
+      googleSheetsConfig: sheetsConfig,
     };
     AppDatabase.saveSettings(updatedSettings);
     onUpdateSettings(updatedSettings);
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2000);
+  };
+
+  const handleTestGoogleSheets = async () => {
+    setSheetsTesting(true);
+    setSheetsTestResult(null);
+    try {
+      googleSheetsClient.saveConfig(sheetsConfig);
+      const res = await googleSheetsClient.testConnection();
+      setSheetsTestResult(res);
+    } finally {
+      setSheetsTesting(false);
+    }
+  };
+
+  const handleInitGoogleSheets = async () => {
+    setSheetsInitializing(true);
+    setSheetsInitResult(null);
+    try {
+      googleSheetsClient.saveConfig(sheetsConfig);
+      const res = await googleSheetsClient.initializeSheets();
+      setSheetsInitResult(res);
+    } finally {
+      setSheetsInitializing(false);
+    }
+  };
+
+  const handleExportToSheets = async () => {
+    if (!window.confirm("Barcha tovarlar, savdolar, mijozlar va xarajatlar Google Sheets bazasiga yuklanadi. Davom etasizmi?")) {
+      return;
+    }
+    setSheetsExporting(true);
+    setSheetsExportResult(null);
+    try {
+      googleSheetsClient.saveConfig(sheetsConfig);
+      const [products, sales, customers, suppliers, expenses, debtTransactions] = await Promise.all([
+        AppDatabase.getProducts(),
+        AppDatabase.getSales(),
+        AppDatabase.getCustomers(),
+        AppDatabase.getSuppliers(),
+        AppDatabase.getExpenses(),
+        AppDatabase.getDebtTransactions(),
+      ]);
+
+      const res = await googleSheetsClient.exportAllToSheets({
+        products,
+        sales,
+        customers,
+        suppliers,
+        expenses,
+        debtTransactions,
+      });
+      setSheetsExportResult(res);
+    } finally {
+      setSheetsExporting(false);
+    }
+  };
+
+  const handleImportFromSheets = async () => {
+    if (!window.confirm("Google Sheets dagi tovarlar, mijozlar va xarajatlar dasturingizga yuklab olinadi va mavjudlari yangilanadi. Davom etasizmi?")) {
+      return;
+    }
+    setSheetsImporting(true);
+    setSheetsImportResult(null);
+    try {
+      googleSheetsClient.saveConfig(sheetsConfig);
+      const res = await googleSheetsClient.importAllFromSheets();
+      setSheetsImportResult(res);
+      if (res.success && res.data) {
+        if (res.data.products && Array.isArray(res.data.products)) {
+          for (const p of res.data.products) {
+            await AppDatabase.saveProduct(p);
+          }
+        }
+        if (res.data.customers && Array.isArray(res.data.customers)) {
+          for (const c of res.data.customers) {
+            await AppDatabase.saveCustomer(c);
+          }
+        }
+        if (res.data.expenses && Array.isArray(res.data.expenses)) {
+          for (const exp of res.data.expenses) {
+            await AppDatabase.addExpense(exp);
+          }
+        }
+        if (res.data.suppliers && Array.isArray(res.data.suppliers)) {
+          for (const sup of res.data.suppliers) {
+            await AppDatabase.saveSupplier(sup);
+          }
+        }
+        onRefreshAll();
+      }
+    } finally {
+      setSheetsImporting(false);
+    }
   };
 
   const handleTestSupabase = async () => {
@@ -855,6 +971,242 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </pre>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* GOOGLE SHEETS BAZA & SERVER API (GOOGLE SERVICE ACCOUNT) */}
+          <div className="p-5 rounded-2xl glass-card border border-teal-500/30 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-teal-500/20 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-teal-600 border border-teal-500 flex items-center justify-center text-white">
+                  <FileSpreadsheet className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>Google Sheets Baza & Secure Server API</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-600 dark:text-teal-400 border border-teal-500/30">
+                      Google Service Account
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Barcha tovarlar, savdolar, qarzlar va xarajatlar to'g'ridan-to'g'ri Google Sheets jadvaliga xavfsiz Server API orqali yoziladi va saqlanadi.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => googleSheetsClient.openGoogleSheet()}
+                  className="px-2.5 py-1 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 text-teal-700 dark:text-teal-300 text-[11px] font-bold flex items-center gap-1.5 transition-all interactive-press shrink-0"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Jadvalni Ochish</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Google Sheet ID */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-teal-500" />
+                      <span>Google Sheet ID</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400">docs.google.com/spreadsheets/d/...</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={sheetsConfig.sheetId || ''}
+                    onChange={(e) => setSheetsConfig({ ...sheetsConfig, sheetId: e.target.value.trim() })}
+                    placeholder="Masalan: 1a2B3c4D5e6F7g8H9i..."
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:border-teal-500"
+                  />
+                </div>
+
+                {/* API Server URL */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Server className="w-3.5 h-3.5 text-teal-500" />
+                      <span>API Server URL (Vercel)</span>
+                    </label>
+                    <span className="text-[10px] text-teal-600 dark:text-teal-400 font-medium">Bo'sh qolsa: /api</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={sheetsConfig.apiUrl || ''}
+                    onChange={(e) => setSheetsConfig({ ...sheetsConfig, apiUrl: e.target.value.trim() })}
+                    placeholder="O'z saytingizda bo'lsa bo'sh qoldiring (yoki https://...)"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:border-teal-500"
+                  />
+                </div>
+
+                {/* API Secret Key */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-teal-500" />
+                      <span>API Xavfsizlik Kaliti (Ixtiyoriy)</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400">API_SECRET_KEY</span>
+                  </div>
+                  <input
+                    type="password"
+                    value={sheetsConfig.apiKey || ''}
+                    onChange={(e) => setSheetsConfig({ ...sheetsConfig, apiKey: e.target.value.trim() })}
+                    placeholder="Serverda sozlagan maxfiy tokeningiz"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:border-teal-500"
+                  />
+                </div>
+
+                {/* Auto Sync Toggle */}
+                <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <input
+                    type="checkbox"
+                    id="sheets-autosync"
+                    checked={sheetsConfig.autoSync}
+                    onChange={(e) => setSheetsConfig({ ...sheetsConfig, autoSync: e.target.checked })}
+                    className="w-4 h-4 text-teal-600 rounded focus:ring-teal-500 cursor-pointer"
+                  />
+                  <label htmlFor="sheets-autosync" className="text-xs font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
+                    Avtomatik doimiy sinxronizatsiya (Har bir yangi savdo va tushumni Google Sheetsga yozish)
+                  </label>
+                </div>
+              </div>
+
+              {/* Action Buttons: Test Connection, Init Sheets, Export All, Import All */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={handleTestGoogleSheets}
+                  disabled={sheetsTesting}
+                  className="py-2.5 px-3 rounded-xl border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all interactive-press disabled:opacity-50"
+                >
+                  <Server className={`w-3.5 h-3.5 ${sheetsTesting ? 'animate-spin' : ''}`} />
+                  <span>{sheetsTesting ? "Tekshirilmoqda..." : "Ulanishni Sinash"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleInitGoogleSheets}
+                  disabled={sheetsInitializing}
+                  className="py-2.5 px-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all interactive-press disabled:opacity-50"
+                >
+                  <FileSpreadsheet className={`w-3.5 h-3.5 ${sheetsInitializing ? 'animate-spin' : ''}`} />
+                  <span>{sheetsInitializing ? "Yaratilmoqda..." : "Jadvallarni Sozlash"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportToSheets}
+                  disabled={sheetsExporting}
+                  className="py-2.5 px-3 rounded-xl border border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all interactive-press disabled:opacity-50"
+                >
+                  <UploadCloud className={`w-3.5 h-3.5 ${sheetsExporting ? 'animate-spin' : ''}`} />
+                  <span>{sheetsExporting ? "Yuklanmoqda..." : "Sheetsga Yuklash"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleImportFromSheets}
+                  disabled={sheetsImporting}
+                  className="py-2.5 px-3 rounded-xl border border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all interactive-press disabled:opacity-50"
+                >
+                  <DownloadCloud className={`w-3.5 h-3.5 ${sheetsImporting ? 'animate-spin' : ''}`} />
+                  <span>{sheetsImporting ? "Yuklanmoqda..." : "Sheetsdan Tiklash"}</span>
+                </button>
+              </div>
+
+              {/* Status Message Panels */}
+              {sheetsTestResult && (
+                <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 animate-in fade-in ${
+                  sheetsTestResult.success
+                    ? 'bg-teal-500/15 border border-teal-500/30 text-teal-800 dark:text-teal-200'
+                    : 'bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300'
+                }`}>
+                  {sheetsTestResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0 text-teal-600" /> : <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />}
+                  <span>{sheetsTestResult.message}</span>
+                  {sheetsTestResult.latencyMs && (
+                    <span className="text-[10px] font-mono opacity-75 ml-auto">({sheetsTestResult.latencyMs} ms)</span>
+                  )}
+                </div>
+              )}
+
+              {sheetsInitResult && (
+                <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 animate-in fade-in ${
+                  sheetsInitResult.success
+                    ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 dark:text-emerald-200'
+                    : 'bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300'
+                }`}>
+                  {sheetsInitResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" /> : <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />}
+                  <span>{sheetsInitResult.message}</span>
+                </div>
+              )}
+
+              {sheetsExportResult && (
+                <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 animate-in fade-in ${
+                  sheetsExportResult.success
+                    ? 'bg-blue-500/15 border border-blue-500/30 text-blue-800 dark:text-blue-200'
+                    : 'bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300'
+                }`}>
+                  {sheetsExportResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0 text-blue-600" /> : <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />}
+                  <span>{sheetsExportResult.message}</span>
+                  {sheetsExportResult.counts && (
+                    <span className="text-[10px] font-mono opacity-80 ml-auto">
+                      (Tovarlar: {sheetsExportResult.counts.products}, Savdolar: {sheetsExportResult.counts.sales})
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {sheetsImportResult && (
+                <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 animate-in fade-in ${
+                  sheetsImportResult.success
+                    ? 'bg-purple-500/15 border border-purple-500/30 text-purple-800 dark:text-purple-200'
+                    : 'bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300'
+                }`}>
+                  {sheetsImportResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0 text-purple-600" /> : <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />}
+                  <span>{sheetsImportResult.message}</span>
+                </div>
+              )}
+
+              {/* Instructions Guide toggle */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowSheetsGuide(prev => !prev)}
+                  className="text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1.5"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>{showSheetsGuide ? "Google Service Account qo'llanmasini yashirish" : "Google Sheets & Service Account o'rnatish qo'llanmasini ko'rish"}</span>
+                </button>
+
+                {showSheetsGuide && (
+                  <div className="mt-2.5 p-4 rounded-xl bg-slate-900 border border-teal-500/30 text-slate-300 text-xs space-y-2 animate-in fade-in">
+                    <p className="font-bold text-teal-400 text-sm">Google Sheets va Google Service Account ulash bo'yicha 4 qadam:</p>
+                    <ol className="list-decimal pl-4 space-y-1.5 text-[11px] leading-relaxed">
+                      <li>
+                        <strong>Google Cloud Console</strong> (<a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" className="text-teal-400 underline">console.cloud.google.com</a>) ga kiring va yangi loyiha (Project) oching.
+                      </li>
+                      <li>
+                        <strong>APIs & Services ➡️ Library</strong> bo'limidan <strong>Google Sheets API</strong> ni qidiring va <em>Enable</em> (Yoqish) tugmasini bosing.
+                      </li>
+                      <li>
+                        <strong>IAM & Admin ➡️ Service Accounts</strong> bo'limiga o'ting, <em>Create Service Account</em> qiling. Yaratilgan hisobning <em>Keys</em> bo'limiga kirib <em>Add Key ➡️ JSON</em> formatida xususiy kalitni yuklab oling.
+                      </li>
+                      <li>
+                        Yangi Google Sheets jadval yarating va uning yuqori o'ng burchagidagi <strong>Share (Поделиться)</strong> tugmasini bosib, Service Account elektron pochtasini (masalan: <code>xyz@project.iam.gserviceaccount.com</code>) <strong>Editor (Tahrirlovchi)</strong> qilib qo'shing.
+                      </li>
+                      <li>
+                        Vercel yoki serveringizning <strong>Environment Variables</strong> bo'limiga <code>GOOGLE_SHEET_ID</code>, <code>GOOGLE_SERVICE_ACCOUNT_EMAIL</code>, va <code>GOOGLE_PRIVATE_KEY</code> ni kiriting.
+                      </li>
+                    </ol>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
