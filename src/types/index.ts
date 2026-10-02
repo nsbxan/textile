@@ -196,12 +196,25 @@ export interface AiConfig {
   autoExecuteActions: boolean;
 }
 
+export interface TelegramRecipient {
+  id: string;
+  name: string;
+  chatId: string;
+  role?: 'admin' | 'manager' | 'cashier' | 'observer';
+  username?: string;
+  enabled: boolean;
+  notifyOnSale: boolean;
+  notifyOnDebtPayment: boolean;
+  addedAt: string;
+}
+
 export interface TelegramConfig {
   enabled: boolean;
   botToken: string;
   chatId: string;
   notifyOnSale: boolean;
   notifyOnDebtPayment: boolean;
+  recipients?: TelegramRecipient[];
 }
 
 export interface SupabaseConfig {

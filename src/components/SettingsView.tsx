@@ -28,9 +28,16 @@ import {
   RefreshCw,
   UploadCloud,
   DownloadCloud,
-  FileText
+  FileText,
+  Users,
+  UserPlus,
+  Search,
+  User,
+  Plus,
+  X,
+  Shield
 } from 'lucide-react';
-import { StoreSettings, AiConfig, TelegramConfig, SupabaseConfig, GoogleSheetsClientConfig } from '../types';
+import { StoreSettings, AiConfig, TelegramConfig, TelegramRecipient, SupabaseConfig, GoogleSheetsClientConfig } from '../types';
 import { AppDatabase, DEFAULT_STORES } from '../db';
 import { aiAgentService, DEFAULT_AI_CONFIG } from '../services/aiAgentService';
 import { telegramService } from '../services/telegramService';
@@ -71,9 +78,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [aiTestResult, setAiTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Telegram Bot Config state
-  const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>(telegramService.getConfig());
+  const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>(
+    settings.telegramConfig || telegramService.getConfig()
+  );
   const [telegramTesting, setTelegramTesting] = useState(false);
   const [telegramTestResult, setTelegramTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Telegram Multi-user state
+  const [showAddTgUserModal, setShowAddTgUserModal] = useState(false);
+  const [showScanModal, setShowScanModal] = useState(false);
+  const [scanningUsers, setScanningUsers] = useState(false);
+  const [scannedUsers, setScannedUsers] = useState<Array<{ chatId: string; name: string; username?: string; lastMessage?: string; date?: string }>>([]);
+  const [scanMessage, setScanMessage] = useState<string>('');
+  const [testingUserId, setTestingUserId] = useState<string | null>(null);
+  const [userTestMessage, setUserTestMessage] = useState<{ id: string; success: boolean; message: string } | null>(null);
+
+  // New recipient form state
+  const [newTgUser, setNewTgUser] = useState<{
+    name: string;
+    chatId: string;
+    role: 'admin' | 'manager' | 'cashier' | 'observer';
+    notifyOnSale: boolean;
+    notifyOnDebtPayment: boolean;
+  }>({
+    name: '',
+    chatId: '',
+    role: 'manager',
+    notifyOnSale: true,
+    notifyOnDebtPayment: true,
+  });
 
   // Supabase Cloud DB Config state
   const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>(
@@ -277,18 +310,120 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   const handleTestTelegram = async () => {
-    if (!telegramConfig.botToken.trim() || !telegramConfig.chatId.trim()) {
-      alert("Iltimos, avval Telegram Bot Token va Chat ID ni kiriting!");
+    if (!telegramConfig.botToken.trim()) {
+      alert("Iltimos, avval Telegram Bot Tokenini kiriting!");
       return;
     }
     setTelegramTesting(true);
     setTelegramTestResult(null);
     try {
-      const res = await telegramService.testConnection(telegramConfig.botToken, telegramConfig.chatId);
+      telegramService.saveConfig(telegramConfig);
+      const res = await telegramService.testAllConnections(telegramConfig.botToken);
       setTelegramTestResult(res);
+      if (res.success) {
+        soundManager.playSuccessSound();
+      }
     } finally {
       setTelegramTesting(false);
     }
+  };
+
+  const handleAddTgUser = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newTgUser.name.trim() || !newTgUser.chatId.trim()) {
+      alert("Iltimos, foydalanuvchi ismi va Telegram Chat ID sini kiriting!");
+      return;
+    }
+    telegramService.addRecipient({
+      name: newTgUser.name.trim(),
+      chatId: newTgUser.chatId.trim(),
+      role: newTgUser.role,
+      enabled: true,
+      notifyOnSale: newTgUser.notifyOnSale,
+      notifyOnDebtPayment: newTgUser.notifyOnDebtPayment,
+    });
+    setTelegramConfig(telegramService.getConfig());
+    setNewTgUser({
+      name: '',
+      chatId: '',
+      role: 'manager',
+      notifyOnSale: true,
+      notifyOnDebtPayment: true,
+    });
+    setShowAddTgUserModal(false);
+    soundManager.playSuccessSound();
+  };
+
+  const handleRemoveTgUser = (id: string, name: string) => {
+    if (!window.confirm(`Haqiqatdan ham "${name}" ni Telegram xabarnomalaridan o'chirmoqchimisiz?`)) {
+      return;
+    }
+    telegramService.removeRecipient(id);
+    setTelegramConfig(telegramService.getConfig());
+  };
+
+  const handleToggleTgUser = (id: string, field: 'enabled' | 'notifyOnSale' | 'notifyOnDebtPayment') => {
+    const recipients = telegramConfig.recipients || [];
+    const target = recipients.find(r => r.id === id);
+    if (!target) return;
+    telegramService.updateRecipient(id, {
+      [field]: !target[field]
+    });
+    setTelegramConfig(telegramService.getConfig());
+  };
+
+  const handleTestRecipient = async (recipient: TelegramRecipient) => {
+    setTestingUserId(recipient.id);
+    setUserTestMessage(null);
+    try {
+      const res = await telegramService.testConnection(
+        telegramConfig.botToken,
+        recipient.chatId,
+        recipient.name
+      );
+      setUserTestMessage({
+        id: recipient.id,
+        success: res.success,
+        message: res.message
+      });
+      if (res.success) {
+        soundManager.playSuccessSound();
+      }
+    } finally {
+      setTestingUserId(null);
+    }
+  };
+
+  const handleScanBotUsers = async () => {
+    if (!telegramConfig.botToken.trim()) {
+      alert("Avval Telegram Bot Tokenini kiriting!");
+      return;
+    }
+    setScanningUsers(true);
+    setScanMessage('');
+    try {
+      const res = await telegramService.fetchBotUpdates(telegramConfig.botToken);
+      setScannedUsers(res.users);
+      setScanMessage(res.message || '');
+      setShowScanModal(true);
+    } finally {
+      setScanningUsers(false);
+    }
+  };
+
+  const handleQuickAddScannedUser = (user: { chatId: string; name: string; username?: string }) => {
+    telegramService.addRecipient({
+      name: user.name + (user.username ? ` (@${user.username})` : ''),
+      chatId: user.chatId,
+      username: user.username,
+      role: 'cashier',
+      enabled: true,
+      notifyOnSale: true,
+      notifyOnDebtPayment: true,
+    });
+    setTelegramConfig(telegramService.getConfig());
+    soundManager.playSuccessSound();
+    setScannedUsers(prev => prev.filter(u => u.chatId !== user.chatId));
   };
 
   const handleExportBackup = async () => {
@@ -745,7 +880,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                       <Bell className="w-3.5 h-3.5 text-sky-500" />
-                      <span>Admin Telegram Chat ID</span>
+                      <span>Telegram Chat ID (yoki bir nechta: 12345, 67890)</span>
                     </label>
                     <a
                       href="https://t.me/userinfobot"
@@ -761,7 +896,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     type="text"
                     value={telegramConfig.chatId}
                     onChange={(e) => setTelegramConfig({ ...telegramConfig, chatId: e.target.value.trim() })}
-                    placeholder="Masalan: 123456789 yoki -100..."
+                    placeholder="Masalan: 7239051384, 123456789..."
                     className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-xs sm:text-sm focus:outline-none focus:border-sky-500"
                   />
                 </div>
@@ -803,7 +938,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     className="w-full py-3 rounded-xl border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 text-xs font-bold flex items-center justify-center gap-1.5 transition-all interactive-press disabled:opacity-50"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>{telegramTesting ? "Yuborilmoqda..." : "Test Xabar Yuborish"}</span>
+                    <span>{telegramTesting ? "Yuborilmoqda..." : "Umumiy Test Xabari"}</span>
                   </button>
                 </div>
               </div>
@@ -818,6 +953,419 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <span>{telegramTestResult.message}</span>
                 </div>
               )}
+
+              {/* ---------------------------------------------------------------- */}
+              {/* TELEGRAM RECIPIENTS / USERS MANAGEMENT SECTION */}
+              {/* ---------------------------------------------------------------- */}
+              <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-sky-500/15 text-sky-600 dark:text-sky-400 flex items-center justify-center">
+                      <Users className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-2">
+                        <span>Xabar Boradigan Foydalanuvchilar (Userlar)</span>
+                        <span className="px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-600 dark:text-sky-400 text-[10px] font-bold">
+                          {(telegramConfig.recipients || []).length} ta user
+                        </span>
+                      </h4>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                        Do'kon egalari, filial menejerlari va kassirlarni botga ulab, savdo xabarlarini ulashish
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={handleScanBotUsers}
+                      disabled={scanningUsers}
+                      className="px-3 py-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 text-[11px] font-bold flex items-center gap-1.5 transition-all interactive-press disabled:opacity-50"
+                      title="Botga /start bosgan foydalanuvchilarni avtomatik qidirish"
+                    >
+                      <Search className={`w-3.5 h-3.5 ${scanningUsers ? 'animate-spin' : ''}`} />
+                      <span>{scanningUsers ? "Qidirilmoqda..." : "Botdan Izlash (Auto)"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowAddTgUserModal(true)}
+                      className="px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-sm shadow-sky-500/20 transition-all interactive-press"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>+ Yangi User Qo'shish</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Direct Bot Link helper */}
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-sky-50/60 dark:bg-sky-950/20 border border-sky-200/60 dark:border-sky-900/30 text-[11px]">
+                  <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                    <Bot className="w-4 h-4 text-sky-500 shrink-0" />
+                    <span>
+                      Yangi xodim botga ulanishi uchun Telegramda <b>@textileprouzbot</b> ga kirib <b>Start</b> bosishi kifoya!
+                    </span>
+                  </div>
+                  <a
+                    href="https://t.me/textileprouzbot"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2.5 py-1 rounded-lg bg-sky-500 text-white font-bold text-[10px] flex items-center gap-1 shrink-0 hover:bg-sky-600 transition-all"
+                  >
+                    <span>Botni Ochish</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+
+                {/* SCAN MODAL / AUTO DISCOVER PANEL */}
+                {showScanModal && (
+                  <div className="p-3.5 rounded-2xl bg-slate-900 text-white border border-sky-500/40 space-y-3 animate-in fade-in">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                      <div className="flex items-center gap-2">
+                        <Search className="w-4 h-4 text-sky-400" />
+                        <span className="text-xs font-bold text-white">
+                          Botga yozgan yangi foydalanuvchilar
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleScanBotUsers}
+                          disabled={scanningUsers}
+                          className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-400 text-[10px] font-bold flex items-center gap-1"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${scanningUsers ? 'animate-spin' : ''}`} />
+                          <span>Qayta tekshirish</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowScanModal(false)}
+                          className="text-slate-400 hover:text-white p-1"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {scannedUsers.length === 0 ? (
+                      <div className="py-4 text-center text-xs text-slate-400 space-y-2">
+                        <p>{scanMessage || "Hozircha botga yangi xabar yozgan foydalanuvchilar topilmadi."}</p>
+                        <p className="text-[11px] text-sky-300">
+                          💡 Xodim telefonida Telegramni ochib, <b>@textileprouzbot</b> ga <b>/start</b> bossin va bu yerdagi "Qayta tekshirish" tugmasini bosing!
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                        {scannedUsers.map((u) => {
+                          const isAlreadyAdded = (telegramConfig.recipients || []).some(r => r.chatId === u.chatId);
+                          return (
+                            <div
+                              key={u.chatId}
+                              className="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/80 hover:border-sky-500/50 transition-all text-xs"
+                            >
+                              <div className="space-y-0.5">
+                                <div className="font-bold text-white flex items-center gap-2">
+                                  <span>{u.name}</span>
+                                  {u.username && (
+                                    <span className="text-[10px] text-sky-400 font-mono">@{u.username}</span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-400 flex items-center gap-2 font-mono">
+                                  <span>ID: {u.chatId}</span>
+                                  {u.lastMessage && <span>• Xabar: "{u.lastMessage}"</span>}
+                                </div>
+                              </div>
+
+                              <div>
+                                {isAlreadyAdded ? (
+                                  <span className="px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/30">
+                                    ✓ Ro'yxatda bor
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleQuickAddScannedUser(u)}
+                                    className="px-2.5 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-white font-bold text-[11px] flex items-center gap-1 transition-all interactive-press"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>Qo'shish</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ADD USER FORM / DRAWER */}
+                {showAddTgUserModal && (
+                  <div className="p-4 rounded-2xl glass-card border border-sky-500/40 bg-sky-50/50 dark:bg-sky-950/20 space-y-3 animate-in fade-in">
+                    <div className="flex items-center justify-between border-b border-sky-500/20 pb-2">
+                      <h5 className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-2">
+                        <UserPlus className="w-4 h-4 text-sky-500" />
+                        <span>Yangi Telegram Foydalanuvchisini Qo'shish</span>
+                      </h5>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddTgUserModal(false)}
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Foydalanuvchi Ismi / Nomi *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newTgUser.name}
+                          onChange={(e) => setNewTgUser({ ...newTgUser, name: e.target.value })}
+                          placeholder="Masalan: Jamshid (Kassir)"
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                            Telegram Chat ID *
+                          </label>
+                          <a
+                            href="https://t.me/userinfobot"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] text-sky-600 dark:text-sky-400 font-bold hover:underline"
+                          >
+                            @userinfobot
+                          </a>
+                        </div>
+                        <input
+                          type="text"
+                          required
+                          value={newTgUser.chatId}
+                          onChange={(e) => setNewTgUser({ ...newTgUser, chatId: e.target.value.trim() })}
+                          placeholder="Masalan: 7239051384"
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Vazifasi / Roli
+                        </label>
+                        <select
+                          value={newTgUser.role}
+                          onChange={(e) => setNewTgUser({ ...newTgUser, role: e.target.value as any })}
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-sky-500"
+                        >
+                          <option value="admin">Rahbar / Admin</option>
+                          <option value="manager">Menejer</option>
+                          <option value="cashier">Kassir / Sotuvchi</option>
+                          <option value="observer">Kuzatuvchi</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={newTgUser.notifyOnSale}
+                            onChange={(e) => setNewTgUser({ ...newTgUser, notifyOnSale: e.target.checked })}
+                            className="w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-0 cursor-pointer"
+                          />
+                          <span>Savdolar (Har bir chek)</span>
+                        </label>
+
+                        <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={newTgUser.notifyOnDebtPayment}
+                            onChange={(e) => setNewTgUser({ ...newTgUser, notifyOnDebtPayment: e.target.checked })}
+                            className="w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-0 cursor-pointer"
+                          />
+                          <span>Qarz to'lovlari</span>
+                        </label>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowAddTgUserModal(false)}
+                          className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                        >
+                          Bekor qilish
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleAddTgUser}
+                          className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold shadow-sm transition-all interactive-press"
+                        >
+                          Foydalanuvchini Saqlash
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* USER TEST RESULT NOTIFICATION */}
+                {userTestMessage && (
+                  <div className={`p-2.5 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 animate-in fade-in ${
+                    userTestMessage.success
+                      ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300'
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      {userTestMessage.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                      <span>{userTestMessage.message}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setUserTestMessage(null)}
+                      className="text-slate-400 hover:text-slate-600 p-0.5"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {/* RECIPIENTS CARDS LIST */}
+                <div className="space-y-2">
+                  {(telegramConfig.recipients || []).length === 0 ? (
+                    <div className="p-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 text-center text-xs text-slate-500 dark:text-slate-400 space-y-1">
+                      <p className="font-bold text-slate-700 dark:text-slate-300">Hozircha qo'shimcha foydalanuvchilar yo'q</p>
+                      <p>Yuqoridagi <b>"+ Yangi User Qo'shish"</b> yoki <b>"Botdan Izlash"</b> tugmasi orqali xodimlaringizni qo'shing.</p>
+                    </div>
+                  ) : (
+                    (telegramConfig.recipients || []).map((recipient) => {
+                      const roleBadge = recipient.role === 'admin'
+                        ? { label: 'Rahbar', color: 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30' }
+                        : recipient.role === 'manager'
+                        ? { label: 'Menejer', color: 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30' }
+                        : recipient.role === 'cashier'
+                        ? { label: 'Kassir', color: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' }
+                        : { label: 'Kuzatuvchi', color: 'bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/30' };
+
+                      const isTestingThis = testingUserId === recipient.id;
+
+                      return (
+                        <div
+                          key={recipient.id}
+                          className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                            recipient.enabled
+                              ? 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700'
+                              : 'bg-slate-100/60 dark:bg-slate-800/20 border-slate-200 dark:border-slate-800 opacity-60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-400 flex items-center justify-center font-bold text-xs shrink-0">
+                              {recipient.name.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-bold text-slate-900 dark:text-white">
+                                  {recipient.name}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${roleBadge.color}`}>
+                                  {roleBadge.label}
+                                </span>
+                                {recipient.username && (
+                                  <span className="text-[10px] text-sky-500 font-mono">@{recipient.username}</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                                <span>Chat ID: <code>{recipient.chatId}</code></span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(recipient.chatId);
+                                    alert(`Chat ID nusxalandi: ${recipient.chatId}`);
+                                  }}
+                                  className="text-slate-400 hover:text-sky-500 p-0.5"
+                                  title="Chat ID nusxalash"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2.5 flex-wrap sm:justify-end">
+                            {/* Notification Pills */}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTgUser(recipient.id, 'notifyOnSale')}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${
+                                recipient.notifyOnSale
+                                  ? 'bg-sky-500/15 border-sky-500/30 text-sky-600 dark:text-sky-400'
+                                  : 'bg-slate-200/50 dark:bg-slate-700/50 border-transparent text-slate-400 line-through'
+                              }`}
+                              title="Savdolar xabarnomasini yoqish/o'chirish"
+                            >
+                              🛍️ Savdolar
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTgUser(recipient.id, 'notifyOnDebtPayment')}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${
+                                recipient.notifyOnDebtPayment
+                                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                                  : 'bg-slate-200/50 dark:bg-slate-700/50 border-transparent text-slate-400 line-through'
+                              }`}
+                              title="Qarz to'lovlari xabarnomasini yoqish/o'chirish"
+                            >
+                              💸 Qarzlar
+                            </button>
+
+                            {/* Active switch */}
+                            <label className="relative inline-flex items-center cursor-pointer" title={recipient.enabled ? "Faol" : "O'chiq"}>
+                              <input
+                                type="checkbox"
+                                checked={recipient.enabled}
+                                onChange={() => handleToggleTgUser(recipient.id, 'enabled')}
+                                className="sr-only peer"
+                              />
+                              <div className="w-8 h-4 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all dark:border-slate-600 peer-checked:bg-emerald-500"></div>
+                            </label>
+
+                            {/* Test individual recipient */}
+                            <button
+                              type="button"
+                              onClick={() => handleTestRecipient(recipient)}
+                              disabled={isTestingThis || !telegramConfig.botToken}
+                              className="px-2.5 py-1 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/30 text-[10px] font-bold flex items-center gap-1 transition-all interactive-press disabled:opacity-50"
+                              title="Shu foydalanuvchiga test xabar yuborish"
+                            >
+                              <Send className={`w-3 h-3 ${isTestingThis ? 'animate-spin' : ''}`} />
+                              <span>{isTestingThis ? "..." : "Test"}</span>
+                            </button>
+
+                            {/* Delete button */}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveTgUser(recipient.id, recipient.name)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
+                              title="O'chirish"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
