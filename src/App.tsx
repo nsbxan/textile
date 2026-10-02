@@ -178,9 +178,12 @@ export function App() {
     setSettings(AppDatabase.getSettings());
   }, []);
 
-  const triggerCloudSync = useCallback(async (showLoading: boolean = false) => {
+  const triggerCloudSync = useCallback(async (showLoading: boolean = false, fullPush: boolean = false) => {
     if (showLoading) setSyncStatus('syncing');
     try {
+      if (fullPush) {
+        await AppDatabase.pushAllToCloud();
+      }
       const changed = await AppDatabase.syncFromCloud();
       if (changed) {
         loadData();
@@ -188,6 +191,9 @@ export function App() {
       setSyncStatus('synced');
       const now = new Date();
       setLastSyncTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+      if (fullPush) {
+        soundManager.playSuccessSound();
+      }
     } catch (e) {
       console.error('Cloud sync error:', e);
       setSyncStatus('error');
@@ -331,7 +337,7 @@ export function App() {
         onLogout={handleLogout}
         syncStatus={syncStatus}
         lastSyncTime={lastSyncTime}
-        onManualSync={() => triggerCloudSync(true)}
+        onManualSync={() => triggerCloudSync(true, true)}
       />
 
       {/* Main Layout Area */}

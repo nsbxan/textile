@@ -165,7 +165,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // 2. Also check Vercel matched headers
-  const matchedPath = (req.headers['x-matched-path'] || req.headers['x-now-route-matches']) as string | undefined;
+  const reqHeaders = req.headers || {};
+  const matchedPath = (reqHeaders['x-matched-path'] || reqHeaders['x-now-route-matches']) as string | undefined;
   if (pathname === '/api' && typeof matchedPath === 'string' && matchedPath.startsWith('/api/')) {
     pathname = matchedPath.split('?')[0].replace(/\/+$/, '');
   }
@@ -621,6 +622,69 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             await sheets.spreadsheets.values.append({
               spreadsheetId: sheetId,
               range: `${SHEET_NAMES.SALES}!A1`,
+              valueInputOption: 'USER_ENTERED',
+              insertDataOption: 'INSERT_ROWS',
+              requestBody: { values: [row] },
+            });
+          }
+
+          if (evt.action === 'CUSTOMER_SAVED' && evt.payload?.id) {
+            const c = evt.payload;
+            const row = [
+              c.id, c.name || '', c.phone || '', c.address || '', c.balance || 0,
+              c.notes || '', c.storeId || 'store_1', c.createdAt || evt.timestamp,
+              c.updatedAt || new Date().toISOString(),
+            ];
+            await sheets.spreadsheets.values.append({
+              spreadsheetId: sheetId,
+              range: `${SHEET_NAMES.CUSTOMERS}!A1`,
+              valueInputOption: 'USER_ENTERED',
+              insertDataOption: 'INSERT_ROWS',
+              requestBody: { values: [row] },
+            });
+          }
+
+          if (evt.action === 'EXPENSE_CREATED' && evt.payload?.id) {
+            const e = evt.payload;
+            const row = [
+              e.id, e.date || new Date().toISOString().split('T')[0], e.category || '',
+              e.amount || 0, e.paymentMethod || 'cash', e.description || '',
+              e.storeId || 'store_1', e.createdAt || evt.timestamp,
+            ];
+            await sheets.spreadsheets.values.append({
+              spreadsheetId: sheetId,
+              range: `${SHEET_NAMES.EXPENSES}!A1`,
+              valueInputOption: 'USER_ENTERED',
+              insertDataOption: 'INSERT_ROWS',
+              requestBody: { values: [row] },
+            });
+          }
+
+          if (evt.action === 'SUPPLIER_SAVED' && evt.payload?.id) {
+            const sup = evt.payload;
+            const row = [
+              sup.id, sup.name || '', sup.phone || '', sup.company || '', sup.balance || 0,
+              sup.notes || '', sup.storeId || 'store_1', sup.createdAt || evt.timestamp,
+            ];
+            await sheets.spreadsheets.values.append({
+              spreadsheetId: sheetId,
+              range: `${SHEET_NAMES.SUPPLIERS}!A1`,
+              valueInputOption: 'USER_ENTERED',
+              insertDataOption: 'INSERT_ROWS',
+              requestBody: { values: [row] },
+            });
+          }
+
+          if (evt.action === 'DEBT_TRANSACTION_CREATED' && evt.payload?.id) {
+            const d = evt.payload;
+            const row = [
+              d.id, d.createdAt || evt.timestamp, d.type || 'customer',
+              d.entityName || '', d.action || 'pay_debt', d.amount || 0,
+              d.paymentMethod || 'cash', d.notes || '', d.storeId || 'store_1',
+            ];
+            await sheets.spreadsheets.values.append({
+              spreadsheetId: sheetId,
+              range: `${SHEET_NAMES.DEBT_HISTORY}!A1`,
               valueInputOption: 'USER_ENTERED',
               insertDataOption: 'INSERT_ROWS',
               requestBody: { values: [row] },

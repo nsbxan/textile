@@ -141,6 +141,58 @@ export class AppDatabase {
     });
   }
 
+  // Barcha mahalliy ma'lumotlarni to'liq bulutga (Google Sheets & Supabase) saqlash
+  static async pushAllToCloud(): Promise<{ success: boolean; message: string; counts?: any }> {
+    try {
+      const [products, sales, customers, suppliers, expenses, debtTransactions] = await Promise.all([
+        this.getProducts('all'),
+        this.getSales('all'),
+        this.getCustomers('all'),
+        this.getSuppliers(),
+        this.getExpenses('all'),
+        this.getDebtTransactions(),
+      ]);
+
+      // 1. Google Sheets bazasiga to'liq eksport
+      const sheetsRes = await googleSheetsClient.exportAllToSheets({
+        products,
+        sales,
+        customers,
+        suppliers,
+        expenses,
+        debtTransactions,
+      });
+
+      // 2. Supabase bulutiga saqlash (agar sozlangan bo'lsa)
+      if (cloudDb.isConfigured()) {
+        await cloudDb.pushAllLocalData({
+          products,
+          sales,
+          customers,
+          suppliers,
+          expenses,
+          debtTransactions,
+          settings: this.getSettings(),
+        });
+      }
+
+      // 3. Navbatdagi barcha server hodisalarini yuborish
+      await serverSyncService.syncWithServer();
+
+      return {
+        success: sheetsRes.success,
+        message: sheetsRes.message || "Barcha ma'lumotlar bulutga muvaffaqiyatli saqlandi!",
+        counts: sheetsRes.counts,
+      };
+    } catch (e: any) {
+      console.error('Error pushing all to cloud:', e);
+      return {
+        success: false,
+        message: e.message || "Bulutga yuklashda xatolik yuz berdi",
+      };
+    }
+  }
+
   // Bulutli bazadan barcha ma'lumotlarni tortib olish va sinxronizatsiya (Cloud Sync)
   // Google Sheets bazasidan barcha ma'lumotlarni tortib olish
   static async syncFromGoogleSheets(): Promise<boolean> {
